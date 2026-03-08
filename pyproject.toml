@@ -1,0 +1,78 @@
+[tool.poetry]
+name = "super-tts"
+version = "0.1.0"
+description = "Ultra-fast Supertonic-based Discord TTS bot"
+authors = ["aabou <aabou@example.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "tts_module"}, {include = "tts"}, {include = "utils"}, {include = "common"}, {include = "db"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+discord-py = "^2.6"
+python-dotenv = "^1.2"
+aiohttp = "^3.11"
+asyncpg = "^0.31"
+SQLAlchemy = "^2.0"
+psutil = "^7.2"
+fuzzywuzzy = "^0.18"
+
+# TTS Engine Dependencies
+TTS = "^0.22"
+torch = "^2.4"
+torchaudio = "^2.4"
+torchvision = "^0.19"
+scipy = "^1.16"
+pyyaml = "^6.0"
+librosa = "^0.11"
+inflect = "^7.5"
+pydub = "^0.25"
+supertonic = "^1.1"
+onnxruntime = "^1.17"
+
+# Database
+psycopg = "^3.2"
+
+# Utilities
+colorlog = "^6.10"
+concurrent-log-handler = "^0.9"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0"
+black = "^23.0"
+flake8 = "^6.0"
+mypy = "^1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-v"

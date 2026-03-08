@@ -1,0 +1,169 @@
+# Discord TTS Bot Configuration
+
+# Bot settings
+bot:
+  # Command prefix (if using traditional commands instead of slash commands)
+  prefix: "!"
+
+  # Status message
+  activity:
+    name: "text to speech"
+    type: "playing"  # watching, listening, playing
+
+# TTS Engine settings (Supertonic only)
+tts:
+  # Enable model warmup on startup (disable for faster startup, warmup will happen on first synthesis)
+  warmup: true
+
+  # Maximum concurrent TTS tasks
+  max_concurrent: 6
+
+  # Model directory (will download if not present)
+  model_path: "~/.local/share/TTS"
+
+  # Supertonic: Ultra-fast on-device synthesis with multiple voices
+  # Available voices: M1-M5 (male), F1-F5 (female), custom (your personal voice)
+  # Device options: "auto" (detect CUDA/ROCm/CPU), "cuda" (NVIDIA GPU), "rocm" (AMD GPU), "cpu"
+  supertonic:
+    device: "auto"  # auto-detects NVIDIA CUDA, AMD ROCm, or falls back to CPU
+    voice: "custom"  # Default voice for Supertonic (set to your custom voice)
+
+# Audio settings
+audio:
+  # Input sample rate for TTS engine
+  sample_rate_input: 24000
+
+  # Output sample rate for Discord (must be 48000 for Discord voice)
+  sample_rate_output: 48000
+
+  # Audio format
+  format: "pcm"
+  channels: 1  # Mono
+
+# Queue settings
+queue:
+  # Max messages per guild queue
+  max_queue_size: 50
+
+  # Queue timeout (seconds)
+  timeout: 5
+
+# User preferences defaults
+defaults:
+  voice_name: "default"
+  speed: 1.0
+  pitch: 1.0
+  language: "en"
+
+# Supertonic voices
+voices:
+  # Male voices: M1-M5
+  M1:
+    name: "M1"
+    gender: "male"
+    lang: "en"
+
+  M2:
+    name: "M2"
+    gender: "male"
+    lang: "en"
+
+  M3:
+    name: "M3"
+    gender: "male"
+    lang: "en"
+
+  M4:
+    name: "M4"
+    gender: "male"
+    lang: "en"
+
+  M5:
+    name: "M5"
+    gender: "male"
+    lang: "en"
+
+  # Female voices: F1-F5
+  F1:
+    name: "F1"
+    gender: "female"
+    lang: "en"
+
+  F2:
+    name: "F2"
+    gender: "female"
+    lang: "en"
+
+  F3:
+    name: "F3"
+    gender: "female"
+    lang: "en"
+
+  F4:
+    name: "F4"
+    gender: "female"
+    lang: "en"
+
+  F5:
+    name: "F5"
+    gender: "female"
+    lang: "en"
+
+  # Custom voice (provide your own voice sample)
+  custom:
+    name: "custom"
+    gender: "neutral"
+    lang: "en"
+    sample: "data/voices/custom.wav"
+
+# Supported languages
+languages:
+  en: "English"
+  es: "Spanish"
+  fr: "French"
+  de: "German"
+  it: "Italian"
+  pt: "Portuguese"
+  pl: "Polish"
+  tr: "Turkish"
+  ru: "Russian"
+  nl: "Dutch"
+  el: "Greek"
+  hu: "Hungarian"
+  zh: "Chinese"
+  ja: "Japanese"
+  ko: "Korean"
+  ar: "Arabic"
+
+# Database settings
+database:
+  path: "data/tts.db"
+  # Enable WAL (write-ahead logging) for better concurrency
+  wal: true
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/tts_bot.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Performance monitoring
+monitoring:
+  # Track and log latency metrics
+  track_latency: true
+
+  # Log interval (seconds)
+  log_interval: 300
+
+# Security
+security:
+  # Max message length (characters) to prevent abuse
+  max_message_length: 500
+
+  # Rate limiting per user (messages per minute)
+  rate_limit_messages: 30
+
+  # Minimum time between messages per user (milliseconds)
+  min_message_interval: 500

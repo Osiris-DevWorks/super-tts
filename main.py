@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""
+Super TTS Bot - Main Entry Point
+Ultra-fast Supertonic-based Discord TTS bot
+"""
+
+import os
+import sys
+import logging
+from dotenv import load_dotenv
+import discord
+from discord.ext import commands
+
+# Load environment variables
+load_dotenv()
+
+# Setup logging
+LOG_LEVEL = "INFO"
+if len(sys.argv) > 1:
+    arg_level = sys.argv[1].upper()
+    if arg_level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        LOG_LEVEL = arg_level
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# Get Discord token
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+if not DISCORD_TOKEN:
+    logger.error("DISCORD_TOKEN environment variable not set.")
+    sys.exit(1)
+
+# Setup bot
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.voice_states = True
+intents.guilds = True
+
+bot = commands.Bot(command_prefix="/", intents=intents)
+
+
+@bot.event
+async def on_ready():
+    """Called when bot is ready"""
+    logger.info(f"Bot is ready! Logged in as {bot.user}")
+    logger.info(f"Super TTS Bot reporting for duty!")
+    logger.info(f"Log level: {LOG_LEVEL}")
+
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    """Handle message events"""
+    # This allows slash commands and cog listeners to work
+    await bot.process_commands(message)
+
+
+async def load_extensions():
+    """Load TTS cog"""
+    try:
+        await bot.load_extension("tts_module.tts")
+        logger.info("TTS cog loaded successfully")
+    except Exception as e:
+        logger.error(f"Failed to load TTS cog: {e}")
+        raise
+
+
+async def main():
+    """Main entry point"""
+    async with bot:
+        await load_extensions()
+        await bot.start(DISCORD_TOKEN)
+
+
+if __name__ == "__main__":
+    try:
+        import asyncio
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot shutdown requested")
+    except Exception as e:
+        logger.error(f"Bot error: {e}", exc_info=True)
+        sys.exit(1)

@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+.pytest_cache
+.tox
+.coverage
+htmlcov
+.mypy_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project
+logs/
+data/
+*.log
+*.db
+*.sqlite
+.env
+.env.local
+config.local.yaml
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Node (if applicable)
+node_modules
+npm-debug.log
+
+# Poetry
+poetry.lock
