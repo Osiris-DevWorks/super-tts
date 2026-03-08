@@ -14,8 +14,8 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from tts_module.tts import TTSEngineFactory
-from tts_module.tts import AudioPipeline, PCMAudioSource
+from tts.engine_factory import TTSEngineFactory
+from tts.audio_pipeline import AudioPipeline, PCMAudioSource
 from utils.queue_manager import QueueManager, QueuedMessage
 from tts_module.db_models import TTSMonitoredChannels, TTSUserPreferences
 from utils.config_loader import ConfigLoader
