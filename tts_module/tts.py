@@ -839,6 +839,21 @@ class TTS(commands.Cog):
                 guild = before.channel.guild
                 await self.queue_manager.stop_processor(guild.id)
                 logger.info(f'Bot left voice channel in {guild.name}')
+        else:
+            # Check if a user left a channel where the bot is connected
+            if before.channel and not after.channel:
+                guild = before.channel.guild
+                if guild.voice_client and guild.voice_client.channel == before.channel:
+                    # Count non-bot users in the channel
+                    users_in_channel = [m for m in before.channel.members if not m.bot]
+                    if not users_in_channel:
+                        # No users left, disconnect bot
+                        try:
+                            logger.info(f'Last user left {before.channel.name}, disconnecting bot')
+                            await guild.voice_client.disconnect(force=True)
+                            await self.queue_manager.stop_processor(guild.id)
+                        except Exception as e:
+                            logger.error(f'Failed to auto-disconnect: {e}')
 
     @commands.Cog.listener()
     async def on_ready(self):
