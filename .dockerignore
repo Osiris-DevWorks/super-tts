@@ -61,5 +61,4 @@ LICENSE
 node_modules
 npm-debug.log
 
-# Poetry
-poetry.lock
+# Poetry (keep poetry.lock for reproducible builds)
