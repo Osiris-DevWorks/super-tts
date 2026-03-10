@@ -9,9 +9,10 @@ packages = [{include = "tts_module"}, {include = "tts"}, {include = "utils"}, {i
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-discord-py = "^2.6"
+discord-py = {version = "^2.6", extras = ["voice"]}
 python-dotenv = "^1.2"
 aiohttp = "^3.11"
+aiofiles = "^24.1"
 asyncpg = "^0.31"
 SQLAlchemy = "^2.0"
 psutil = "^7.2"
@@ -32,6 +33,9 @@ onnxruntime = "^1.17"
 
 # Database
 psycopg = "^3.2"
+
+# Discord Voice
+PyNaCl = "^1.5"
 
 # Utilities
 colorlog = "^6.10"

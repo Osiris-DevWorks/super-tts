@@ -724,13 +724,6 @@ class TTS(commands.Cog):
         if not guild:
             return
 
-        # Check if user has TTS role
-        required_role_name = self.config.get('auto_tts.required_role', 'TTS')
-        has_tts_role = any(role.name == required_role_name for role in message.author.roles)
-
-        if not has_tts_role:
-            return
-
         # Check rate limit (prevent spam)
         cooldown_key = (message.guild.id, message.author.id)
         current_time = time.time()
