@@ -14,12 +14,12 @@ RUN pip install --no-cache-dir poetry
 # Set working directory
 WORKDIR /app
 
-# Copy Poetry files and README (needed by poetry install)
-COPY pyproject.toml poetry.lock* README.md ./
+# Copy Poetry files
+COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies
+# Install dependencies (--no-root skips installing the current project itself)
 RUN poetry config virtualenvs.create false && \
-    poetry install --only=main --no-interaction --no-ansi
+    poetry install --only=main --no-root --no-interaction --no-ansi
 
 
 # Stage 2: Runtime
