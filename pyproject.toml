@@ -8,7 +8,7 @@ readme = "README.md"
 packages = [{include = "tts_module"}, {include = "tts"}, {include = "utils"}, {include = "common"}, {include = "db"}]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.12"
 discord-py = "^2.6"
 python-dotenv = "^1.2"
 aiohttp = "^3.11"
