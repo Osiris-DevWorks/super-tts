@@ -7,12 +7,17 @@ Ultra-fast Supertonic-based Discord TTS bot
 import os
 import sys
 import logging
+import asyncio
+from pathlib import Path
 from dotenv import load_dotenv
 import discord
 from discord.ext import commands
 
 # Load environment variables
 load_dotenv()
+
+# Import database modules
+from db import DB, execute_sql_files
 
 # Setup logging
 LOG_LEVEL = "INFO"
@@ -26,6 +31,9 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# Initialize database
+db = DB()
 
 # Get Discord token
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -69,6 +77,12 @@ async def load_extensions():
     try:
         await bot.load_extension("tts_module.tts")
         logger.info("TTS cog loaded successfully")
+
+        # Pass database to TTS cog after loading
+        tts_cog = bot.get_cog("TTS")
+        if tts_cog:
+            tts_cog.db = db
+            logger.info("Database connection passed to TTS cog")
     except Exception as e:
         logger.error(f"Failed to load TTS cog: {e}")
         raise
@@ -76,9 +90,23 @@ async def load_extensions():
 
 async def main():
     """Main entry point"""
-    async with bot:
-        await load_extensions()
-        await bot.start(DISCORD_TOKEN)
+    try:
+        # Initialize database and run migrations
+        migrations_dir = Path(__file__).parent / "db" / "migrations"
+        logger.info("Running database migrations...")
+        await execute_sql_files(str(migrations_dir), db)
+        logger.info("Database migrations completed successfully")
+
+        # Connect database pool for the bot
+        await db.connect()
+        logger.info("Database connection pool established")
+
+        async with bot:
+            await load_extensions()
+            await bot.start(DISCORD_TOKEN)
+    finally:
+        # Ensure database is closed
+        await db.close()
 
 
 if __name__ == "__main__":

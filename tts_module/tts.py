@@ -1,7 +1,7 @@
 """
-TTS Text-to-Speech Cog for Citizen Bot
-Integrates Coqui XTTS v2 for high-quality voice synthesis
-Uses citizen-bot's existing PostgreSQL database
+TTS Text-to-Speech Cog for Super TTS Bot
+Integrates Supertonic for high-quality voice synthesis
+Uses PostgreSQL database with super_tts schema
 """
 
 import logging
@@ -21,7 +21,7 @@ from tts_module.db_models import TTSMonitoredChannels, TTSUserPreferences
 from utils.config_loader import ConfigLoader
 from common.roles import has_any_role
 
-logger = logging.getLogger("citizen-bot")
+logger = logging.getLogger("super-tts")
 
 
 class TTS(commands.Cog):
@@ -29,14 +29,14 @@ class TTS(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = None  # Citizen-bot's DB will be passed to this
+        self.db = None  # Database connection will be passed from main.py
 
         # TTS components
         self.tts_engine = None
         self.pipeline = None
         self.queue_manager = None
-        self.monitored_channels = None  # Uses PostgreSQL
-        self.user_preferences = None    # Uses PostgreSQL
+        self.monitored_channels = None  # Requires database connection
+        self.user_preferences = None    # Requires database connection
         self.config = None
         self.initialized = False
 
@@ -85,8 +85,8 @@ class TTS(commands.Cog):
             # Initialize audio pipeline
             self.pipeline = AudioPipeline(self.tts_engine)
 
-            # Database models will be initialized lazily after main.py sets self.db
-            # See _ensure_db_models()
+            # Ensure database models are initialized
+            self._ensure_db_models()
 
             # Initialize queue manager with concurrent processing limit
             max_concurrent = self.config.get('tts.max_concurrent', 4)

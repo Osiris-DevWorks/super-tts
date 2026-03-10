@@ -1,12 +1,12 @@
 """
 TTS Database Models
-Uses citizen-bot's existing PostgreSQL database
+Manages super-tts schema in PostgreSQL database
 """
 
 import logging
 from db.db import DB
 
-logger = logging.getLogger("citizen-bot")
+logger = logging.getLogger("super-tts")
 
 
 class TTSMonitoredChannels:
@@ -36,7 +36,7 @@ class TTSMonitoredChannels:
         """
         try:
             query = '''
-                INSERT INTO tts_monitored_channels (channel_id, guild_id, channel_name, added_by)
+                INSERT INTO super_tts.monitored_channels (channel_id, guild_id, channel_name, added_by)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (channel_id) DO NOTHING
             '''
@@ -59,7 +59,7 @@ class TTSMonitoredChannels:
             True if successful
         """
         try:
-            query = 'DELETE FROM tts_monitored_channels WHERE channel_id = $1'
+            query = 'DELETE FROM super_tts.monitored_channels WHERE channel_id = $1'
             await self.db.execute(query, channel_id)
             logger.info(f'Removed monitored channel: {channel_id}')
             return True
@@ -79,7 +79,7 @@ class TTSMonitoredChannels:
             True if channel is monitored
         """
         try:
-            query = 'SELECT channel_id FROM tts_monitored_channels WHERE channel_id = $1'
+            query = 'SELECT channel_id FROM super_tts.monitored_channels WHERE channel_id = $1'
             result = await self.db.fetch_one(query, channel_id)
             return result is not None
 
@@ -100,7 +100,7 @@ class TTSMonitoredChannels:
         try:
             query = '''
                 SELECT channel_id, channel_name, added_by, created_at
-                FROM tts_monitored_channels
+                FROM super_tts.monitored_channels
                 WHERE guild_id = $1
                 ORDER BY created_at DESC
             '''
@@ -128,7 +128,7 @@ class TTSMonitoredChannels:
             List of channel IDs
         """
         try:
-            query = 'SELECT channel_id FROM tts_monitored_channels'
+            query = 'SELECT channel_id FROM super_tts.monitored_channels'
             rows = await self.db.fetch_all(query)
             return [row['channel_id'] for row in rows]
 
@@ -162,7 +162,7 @@ class TTSUserPreferences:
         try:
             query = '''
                 SELECT voice_name, speed, pitch, language
-                FROM tts_user_preferences
+                FROM super_tts.user_preferences
                 WHERE user_id = $1
             '''
             result = await self.db.fetch_one(query, user_id)
@@ -233,13 +233,13 @@ class TTSUserPreferences:
 
             # Try to update existing user
             query = '''
-                INSERT INTO tts_user_preferences (user_id, voice_name, speed, pitch, language)
+                INSERT INTO super_tts.user_preferences (user_id, voice_name, speed, pitch, language)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (user_id) DO UPDATE SET
-                    voice_name = COALESCE(EXCLUDED.voice_name, tts_user_preferences.voice_name),
-                    speed = COALESCE(EXCLUDED.speed, tts_user_preferences.speed),
-                    pitch = COALESCE(EXCLUDED.pitch, tts_user_preferences.pitch),
-                    language = COALESCE(EXCLUDED.language, tts_user_preferences.language),
+                    voice_name = COALESCE(EXCLUDED.voice_name, super_tts.user_preferences.voice_name),
+                    speed = COALESCE(EXCLUDED.speed, super_tts.user_preferences.speed),
+                    pitch = COALESCE(EXCLUDED.pitch, super_tts.user_preferences.pitch),
+                    language = COALESCE(EXCLUDED.language, super_tts.user_preferences.language),
                     updated_at = CURRENT_TIMESTAMP
             '''
 

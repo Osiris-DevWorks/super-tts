@@ -122,16 +122,20 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Poetry
-poetry.lock
+# Poetry (keep poetry.lock for reproducible builds)
 
 # IDE
 .vscode/
-super-tts-backup/.idea/
+.idea/
 *.swp
 *.swo
 *~
 .DS_Store
+
+# Claude Code
+.claude/
+!.claude/memory/
+.claude/settings.local.json
 
 # Project specific
 data/
@@ -139,9 +143,9 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
-../.claude/
 .env.local
 config.local.yaml
 
 # TTS Model cache
 ~/.local/share/TTS/
+/assets/
