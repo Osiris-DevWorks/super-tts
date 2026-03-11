@@ -1470,20 +1470,20 @@ class TTS(commands.Cog):
             supported_languages = self.tts_engine.get_available_languages()
             language = prefs['language'] if prefs['language'] in supported_languages else 'en'
 
-            # Get user's preferred voice (use engine's voice if available, otherwise use M1)
+            # Get user's voice: claimed voice takes priority over preference
             voice_name = prefs.get('voice_name', 'M1')
+            if self.voice_claims:
+                claimed_voice = await self.voice_claims.get_user_claimed_voice(message.author.id)
+                if claimed_voice:
+                    voice_name = claimed_voice
+                    logger.debug(f'Using claimed voice {claimed_voice} for user {message.author}')
 
-            # Use default voice file as fallback (may not be needed for all engines)
-            voice_file = Path('data/voices/default.wav')
-            if not voice_file.exists():
-                voice_file = Path('')  # Use current directory as placeholder if voice file doesn't exist
-
-            # Create queued message
+            # Create queued message (Supertonic uses voice_name, not voice_file_path)
             queued_msg = QueuedMessage(
                 user_id=message.author.id,
                 user_name=message.author.name,
                 text=message.content,
-                voice_file_path=str(voice_file),
+                voice_file_path='',  # Not used by Supertonic
                 speed=speed,
                 language=language,
                 voice_name=voice_name
