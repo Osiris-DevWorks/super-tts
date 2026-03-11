@@ -68,14 +68,26 @@ class SupertonicEngine(BaseTTSEngine):
                 supertonic_cache.mkdir(parents=True, exist_ok=True)
 
                 for voice_file in voices_dir.glob('*.json'):
-                    dest_file = supertonic_cache / voice_file.name
-                    try:
-                        if not dest_file.exists() or voice_file.stat().st_mtime > dest_file.stat().st_mtime:
-                            shutil.copy2(voice_file, dest_file)
-                            voice_name = voice_file.stem.upper()
-                            logger.info(f'Copied custom voice style: {voice_name}')
-                    except Exception as e:
-                        logger.warning(f'Failed to copy voice file {voice_file}: {e}')
+                    # Match voice name to AVAILABLE_VOICES (case-sensitive, Supertonic needs exact match)
+                    voice_stem = voice_file.stem
+                    # Find matching voice in AVAILABLE_VOICES (case-insensitive search)
+                    matching_voice = None
+                    for av_name in self.AVAILABLE_VOICES.keys():
+                        if av_name.lower() == voice_stem.lower():
+                            matching_voice = av_name
+                            break
+
+                    if matching_voice:
+                        # Copy with the correct case to match AVAILABLE_VOICES
+                        dest_file = supertonic_cache / f'{matching_voice}.json'
+                        try:
+                            if not dest_file.exists() or voice_file.stat().st_mtime > dest_file.stat().st_mtime:
+                                shutil.copy2(voice_file, dest_file)
+                                logger.info(f'Copied custom voice style: {matching_voice}')
+                        except Exception as e:
+                            logger.warning(f'Failed to copy voice file {voice_file}: {e}')
+                    else:
+                        logger.warning(f'Voice {voice_stem} from {voice_file} not found in AVAILABLE_VOICES')
 
             # Pre-load the voice style
             self.voice_style = self.tts.get_voice_style(voice_name=voice)
