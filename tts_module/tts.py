@@ -1511,6 +1511,23 @@ class TTS(commands.Cog):
                     voice_name = claimed_voice
                     logger.debug(f'Using claimed voice {claimed_voice} for user {message.author}')
 
+            # Check if the selected voice is claimed by someone else
+            if self.voice_claims:
+                voice_owner = await self.voice_claims.get_voice_owner(voice_name)
+                if voice_owner and voice_owner != message.author.id:
+                    # Voice is claimed by someone else - send ephemeral error and don't process TTS
+                    try:
+                        embed = discord.Embed(
+                            title="Voice Not Available",
+                            description=f"The voice **{voice_name}** is exclusively claimed by another user and cannot be used.",
+                            color=discord.Color.red()
+                        )
+                        await message.reply(embed=embed, ephemeral=True)
+                    except Exception as e:
+                        logger.warning(f'Failed to send voice restriction message: {e}')
+                    logger.debug(f'User {message.author} tried to use claimed voice {voice_name} owned by {voice_owner}')
+                    return
+
             # Create queued message (Supertonic uses voice_name, not voice_file_path)
             queued_msg = QueuedMessage(
                 user_id=message.author.id,
