@@ -2,11 +2,16 @@
 
 ## TL;DR: Minimum Required for Railway
 
-Only **2 environment variables** are actually needed:
+Only **2 environment variables** are required:
 
 ```
 DISCORD_TOKEN=your_discord_bot_token_here
 DATABASE_URL=postgresql://...    (auto-populated by Railway PostgreSQL plugin)
+```
+
+**1 optional but recommended:**
+```
+HF_TOKEN=hf_...    (Get from https://huggingface.co/settings/tokens)
 ```
 
 ---
@@ -19,6 +24,12 @@ DATABASE_URL=postgresql://...    (auto-populated by Railway PostgreSQL plugin)
 |----------|---------|-----------|-----------|
 | `DISCORD_TOKEN` | Authenticate bot with Discord | `main.py` line 39, 106 | **YES** |
 | `DATABASE_URL` | PostgreSQL connection string | `db/db.py` line 13 | **YES** |
+
+### ⭐ RECOMMENDED - Optional but Improves Performance
+
+| Variable | Purpose | Where Used | Required? |
+|----------|---------|-----------|-----------|
+| `HF_TOKEN` | Hugging Face Hub authentication | TTS model downloads | **NO** (but recommended) |
 
 ### ❌ NOT USED - Can Be Deleted
 
@@ -65,3 +76,27 @@ Update `.env.example` to only include:
 - `DATABASE_URL` (with comment that Railway auto-populates this)
 
 Delete all the unused variables to reduce confusion.
+
+---
+
+## HF_TOKEN Setup (Optional but Recommended)
+
+**Why?** The TTS engine downloads models from Hugging Face Hub. Without authentication:
+- ❌ Lower rate limits (may be throttled if many downloads)
+- ❌ Slower downloads
+- ✅ Still works, just suboptimal
+
+**How to get HF_TOKEN:**
+
+1. Go to https://huggingface.co/settings/tokens
+2. Create a new token (read-only is fine)
+3. Copy the token value
+4. Add to Railway Variables: `HF_TOKEN=hf_xxxxx`
+
+**In Railway:**
+1. Go to your bot service → Variables tab
+2. Add new variable: `HF_TOKEN`
+3. Paste your token value
+4. Redeploy
+
+The warning will disappear and downloads will be faster!
