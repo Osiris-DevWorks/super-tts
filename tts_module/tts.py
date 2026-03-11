@@ -884,24 +884,8 @@ class TTS(commands.Cog):
                     inline=False
                 )
 
-            # Show unavailable voices if subscribed
-            if is_subscribed and len(all_claimed_voices) > 0:
-                unavailable = {v: all_claimed_voices[v] for v in all_claimed_voices if v != user_claimed_voice}
-                if unavailable:
-                    unavailable_text = ""
-                    for voice_id, owner_id in sorted(unavailable.items()):
-                        try:
-                            owner = await self.bot.fetch_user(owner_id)
-                            owner_name = owner.name
-                        except:
-                            owner_name = f"User {owner_id}"
-                        unavailable_text += f"`{voice_id}` (claimed by {owner_name})\n"
-
-                    embed.add_field(
-                        name="🔒 Unavailable (Claimed by Others)",
-                        value=unavailable_text.strip(),
-                        inline=False
-                    )
+            # Note: We don't show claimed voices that the user doesn't own
+            # This prevents harassment and keeps voice ownership private
 
             # Add usage instructions
             if is_subscribed:
