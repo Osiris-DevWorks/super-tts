@@ -59,20 +59,23 @@ class SupertonicEngine(BaseTTSEngine):
             # Initialize Supertonic TTS (auto-downloads model on first run)
             self.tts = TTS(auto_download=True)
 
-            # Load all custom voice styles from voices directory
+            # Copy custom voice styles from voices directory to Supertonic's voice_styles directory
             voices_dir = Path(__file__).parent.parent / 'voices'
             if voices_dir.exists():
-                import json
+                import shutil
+                # Find Supertonic's voice_styles directory in the cache
+                supertonic_cache = Path.home() / '.cache' / 'supertonic2' / 'voice_styles'
+                supertonic_cache.mkdir(parents=True, exist_ok=True)
+
                 for voice_file in voices_dir.glob('*.json'):
-                    voice_name = voice_file.stem.upper()  # filename to voice name (e.g., tichro.json -> TICHRO)
+                    dest_file = supertonic_cache / voice_file.name
                     try:
-                        with open(voice_file, 'r') as f:
-                            voice_data = json.load(f)
-                        # Register custom voice with Supertonic
-                        self.tts.voice_styles[voice_name] = voice_data
-                        logger.info(f'Loaded custom voice style: {voice_name}')
+                        if not dest_file.exists() or voice_file.stat().st_mtime > dest_file.stat().st_mtime:
+                            shutil.copy2(voice_file, dest_file)
+                            voice_name = voice_file.stem.upper()
+                            logger.info(f'Copied custom voice style: {voice_name}')
                     except Exception as e:
-                        logger.warning(f'Failed to load voice from {voice_file}: {e}')
+                        logger.warning(f'Failed to copy voice file {voice_file}: {e}')
 
             # Pre-load the voice style
             self.voice_style = self.tts.get_voice_style(voice_name=voice)
@@ -135,22 +138,8 @@ class SupertonicEngine(BaseTTSEngine):
             try:
                 logger.debug(f'Supertonic synthesizing with voice {selected_voice}: {text[:50]}...')
 
-                # Try to get voice style; load custom voice if not found
-                try:
-                    voice_style = self.tts.get_voice_style(voice_name=selected_voice)
-                except FileNotFoundError:
-                    # Try loading from custom voices directory as fallback
-                    import json
-                    voices_dir = Path(__file__).parent.parent / 'voices'
-                    custom_voice_file = voices_dir / f'{selected_voice.lower()}.json'
-                    if custom_voice_file.exists():
-                        with open(custom_voice_file, 'r') as f:
-                            voice_data = json.load(f)
-                        self.tts.voice_styles[selected_voice] = voice_data
-                        logger.info(f'Loaded custom voice: {selected_voice}')
-                        voice_style = self.tts.get_voice_style(voice_name=selected_voice)
-                    else:
-                        raise
+                # Get voice style for selected voice
+                voice_style = self.tts.get_voice_style(voice_name=selected_voice)
 
                 # Synthesize using Supertonic
                 wav, duration = self.tts.synthesize(text, voice_style=voice_style)
