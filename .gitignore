@@ -135,6 +135,7 @@ dmypy.json
 # Claude Code
 .claude/
 !.claude/memory/
+!.claude/commands/
 .claude/settings.local.json
 
 # Project specific

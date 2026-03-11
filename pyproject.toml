@@ -43,6 +43,9 @@ concurrent-log-handler = "^0.9"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0"
+pytest-asyncio = "^0.23"
+pytest-mock = "^3.14"
+pytest-cov = "^5.0"
 black = "^23.0"
 flake8 = "^6.0"
 mypy = "^1.0"
@@ -80,3 +83,4 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 python_files = "test_*.py"
 addopts = "-v"
+asyncio_mode = "auto"

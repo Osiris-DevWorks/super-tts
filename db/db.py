@@ -14,6 +14,13 @@ class DB:
         self._connection_attempts = 0
         self._max_attempts = 3
 
+        # Warn if DATABASE_URL points to localhost (won't work in containerized environments)
+        if self.dsn and "localhost" in self.dsn:
+            logger.warning(
+                "DATABASE_URL contains 'localhost' which may not work in containerized environments. "
+                "For Railway deployments, ensure DATABASE_URL uses the Railway PostgreSQL plugin's connection string."
+            )
+
     async def connect(self, force_reconnect: bool = False):
         """Connect to the database with retry logic."""
         if self.pool and not force_reconnect:
@@ -41,7 +48,11 @@ class DB:
                 self._connection_attempts += 1
                 logger.error(f"Database connection attempt {attempt + 1} failed: {e}")
                 if attempt == self._max_attempts - 1:
-                    raise Exception(f"Failed to connect to database after {self._max_attempts} attempts") from e
+                    error_msg = f"Failed to connect to database after {self._max_attempts} attempts"
+                    if "localhost" in str(self.dsn or ""):
+                        error_msg += "\n⚠️ DATABASE_URL contains 'localhost' - this won't work in Railway's containerized environment."
+                        error_msg += "\n✓ Solution: Link PostgreSQL plugin in Railway and use the auto-generated DATABASE_URL variable."
+                    raise Exception(error_msg) from e
                 await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
     async def health_check(self):
