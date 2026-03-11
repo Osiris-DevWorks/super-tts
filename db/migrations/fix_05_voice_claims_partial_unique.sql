@@ -8,9 +8,24 @@
 -- - Only ONE active claim per voice_id
 -- - Users can claim again after releasing (released records don't count)
 
--- Remove the old UNIQUE constraints
-ALTER TABLE super_tts.voice_claims DROP CONSTRAINT voice_claims_user_id_key;
-ALTER TABLE super_tts.voice_claims DROP CONSTRAINT voice_claims_voice_id_key;
+-- Remove the old UNIQUE constraints (if they exist)
+-- PostgreSQL creates implicit constraints named {table}_{columns}_key for UNIQUE clauses
+DO $$
+BEGIN
+    -- Drop user_id constraint if exists
+    BEGIN
+        ALTER TABLE super_tts.voice_claims DROP CONSTRAINT voice_claims_user_id_key;
+    EXCEPTION WHEN OTHERS THEN
+        NULL;  -- Constraint may not exist
+    END;
+
+    -- Drop voice_id constraint if exists
+    BEGIN
+        ALTER TABLE super_tts.voice_claims DROP CONSTRAINT voice_claims_voice_id_key;
+    EXCEPTION WHEN OTHERS THEN
+        NULL;  -- Constraint may not exist
+    END;
+END $$;
 
 -- Add partial unique indexes (only for active claims where released_at IS NULL)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_claims_active_user_unique
