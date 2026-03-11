@@ -239,6 +239,9 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        # Ensure database models are initialized
+        self._ensure_db_models()
+
         try:
             # Check if already monitored
             is_monitored = await self.monitored_channels.is_channel_monitored(channel.id)
@@ -297,6 +300,9 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        # Ensure database models are initialized
+        self._ensure_db_models()
+
         try:
             is_monitored = await self.monitored_channels.is_channel_monitored(channel.id)
             if not is_monitored:
@@ -335,6 +341,9 @@ class TTS(commands.Cog):
         if not self.initialized:
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
+
+        # Ensure database models are initialized
+        self._ensure_db_models()
 
         try:
             channels = await self.monitored_channels.get_monitored_channels(interaction.guild_id)
@@ -402,6 +411,9 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        # Ensure database models are initialized
+        self._ensure_db_models()
+
         try:
             success, message = await self.user_subscriptions.grant_subscription(
                 user_id=user.id,
@@ -442,6 +454,9 @@ class TTS(commands.Cog):
         if not self.initialized:
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
+
+        # Ensure database models are initialized
+        self._ensure_db_models()
 
         try:
             # Release any claimed voices first
@@ -625,6 +640,9 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        # Ensure database models are initialized
+        self._ensure_db_models()
+
         try:
             await interaction.response.defer(ephemeral=True)
 
@@ -785,6 +803,9 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        # Ensure database models are initialized
+        self._ensure_db_models()
+
         try:
             # Get available voices from engine
             if hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
@@ -914,6 +935,9 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        # Ensure database models are initialized
+        self._ensure_db_models()
+
         try:
             # Get available voices
             if not hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
@@ -989,6 +1013,9 @@ class TTS(commands.Cog):
         if not self.initialized:
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
+
+        # Ensure database models are initialized
+        self._ensure_db_models()
 
         try:
             # Check if user has active subscription
@@ -1101,6 +1128,9 @@ class TTS(commands.Cog):
         if not self.initialized:
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
+
+        # Ensure database models are initialized
+        self._ensure_db_models()
 
         try:
             # Check if user has a claimed voice
@@ -1379,6 +1409,9 @@ class TTS(commands.Cog):
 
         if not self.initialized:
             return
+
+        # Ensure database models are initialized
+        self._ensure_db_models()
 
         # Check if this is a monitored channel
         is_monitored = await self.monitored_channels.is_channel_monitored(message.channel.id)
