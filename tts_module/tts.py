@@ -11,17 +11,31 @@ import traceback
 from pathlib import Path
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
 from tts.engine_factory import TTSEngineFactory
 from tts.audio_pipeline import AudioPipeline, PCMAudioSource
 from utils.queue_manager import QueueManager, QueuedMessage
-from tts_module.db_models import TTSMonitoredChannels, TTSUserPreferences
+from tts_module.db_models import TTSMonitoredChannels, TTSUserPreferences, TTSUserSubscriptions, TTSVoiceClaims
 from utils.config_loader import ConfigLoader
 from common.roles import has_any_role
 
 logger = logging.getLogger("super-tts")
+
+
+async def is_admin_or_owner(interaction: discord.Interaction) -> bool:
+    """Check if user is Admin role or bot owner"""
+    # Check if bot owner
+    if interaction.user.id == interaction.client.owner_id:
+        return True
+
+    # Check if has Admin role
+    admin_role = discord.utils.find(lambda r: r.name == "Admin", interaction.guild.roles)
+    if admin_role and admin_role in interaction.user.roles:
+        return True
+
+    return False
 
 
 class TTS(commands.Cog):
@@ -37,6 +51,8 @@ class TTS(commands.Cog):
         self.queue_manager = None
         self.monitored_channels = None  # Requires database connection
         self.user_preferences = None    # Requires database connection
+        self.user_subscriptions = None  # Requires database connection
+        self.voice_claims = None        # Requires database connection
         self.config = None
         self.initialized = False
 
@@ -50,6 +66,8 @@ class TTS(commands.Cog):
         if not self._db_models_initialized and self.db is not None:
             self.monitored_channels = TTSMonitoredChannels(self.db)
             self.user_preferences = TTSUserPreferences(self.db)
+            self.user_subscriptions = TTSUserSubscriptions(self.db)
+            self.voice_claims = TTSVoiceClaims(self.db)
             self._db_models_initialized = True
             logger.info("TTS database models initialized")
 
@@ -159,6 +177,35 @@ class TTS(commands.Cog):
             logger.error(f'Failed to initialize TTS Engine: {e}')
             self.initialized = False
 
+        # Start background cleanup task
+        self.cleanup_expired_subscriptions.start()
+
+    @tasks.loop(hours=1)
+    async def cleanup_expired_subscriptions(self):
+        """Background task to periodically cleanup expired subscriptions and release voices"""
+        try:
+            if not self.user_subscriptions:
+                return
+
+            # Check and cleanup expired subscriptions
+            expired_count = await self.user_subscriptions.check_and_cleanup_expired()
+
+            if expired_count > 0:
+                # Release voices for all expired subscriptions
+                expired_subs = await self.user_subscriptions.list_expired_subscriptions()
+                for sub_info in expired_subs:
+                    await self.voice_claims.release_voices_for_subscription(sub_info['id'])
+
+                logger.info(f'Cleanup task: Processed {expired_count} expired subscriptions')
+
+        except Exception as e:
+            logger.error(f'Error in cleanup_expired_subscriptions task: {e}')
+
+    @cleanup_expired_subscriptions.before_loop
+    async def before_cleanup_expired_subscriptions(self):
+        """Wait for bot to be ready before starting cleanup task"""
+        await self.bot.wait_until_ready()
+
     # TTS Command Group
     tts_group = app_commands.Group(name="tts", description="Text-to-Speech commands")
 
@@ -173,6 +220,13 @@ class TTS(commands.Cog):
     voice_group = app_commands.Group(
         name="voice",
         description="Manage TTS voice selection",
+        parent=tts_group
+    )
+
+    # Admin voice subgroup for subscription management
+    admin_voice_group = app_commands.Group(
+        name="admin-voice",
+        description="Admin commands for voice subscription management",
         parent=tts_group
     )
 
@@ -327,6 +381,363 @@ class TTS(commands.Cog):
             logger.error(f'Error listing monitored channels: {e}')
             await interaction.response.send_message(f'Error: {e}', ephemeral=True)
 
+    # ========== Admin Voice Subscription Commands ==========
+
+    @admin_voice_group.command(name="grant-subscription", description="Grant a user voice claiming subscription")
+    @app_commands.describe(
+        user="User to grant subscription to",
+        tier="Subscription tier (default: voice_subscriber)",
+        expires_at="Expiration date in ISO format (YYYY-MM-DD) or None for no expiration"
+    )
+    @app_commands.check(is_admin_or_owner)
+    async def grant_subscription(
+        self,
+        interaction: discord.Interaction,
+        user: discord.User,
+        tier: str = "voice_subscriber",
+        expires_at: str = None
+    ):
+        """Grant a voice subscription to a user"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            success, message = await self.user_subscriptions.grant_subscription(
+                user_id=user.id,
+                tier=tier,
+                granted_by=interaction.user.id,
+                expires_at=expires_at,
+                notes=None
+            )
+
+            if success:
+                embed = discord.Embed(
+                    title="✅ Subscription Granted",
+                    description=message,
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="User", value=user.mention)
+                embed.add_field(name="Tier", value=tier)
+                if expires_at:
+                    embed.add_field(name="Expires", value=expires_at)
+                else:
+                    embed.add_field(name="Expires", value="Never")
+                embed.add_field(name="Granted by", value=interaction.user.mention)
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                logger.info(f'Admin {interaction.user} granted subscription to {user}')
+            else:
+                await interaction.response.send_message(f"❌ {message}", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f'Failed to grant subscription: {e}')
+            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+
+    @admin_voice_group.command(name="revoke-subscription", description="Revoke a user's subscription")
+    @app_commands.describe(user="User whose subscription to revoke")
+    @app_commands.check(is_admin_or_owner)
+    async def revoke_subscription(self, interaction: discord.Interaction, user: discord.User):
+        """Revoke a user's subscription"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            # Release any claimed voices first
+            claimed_voice = await self.voice_claims.get_user_claimed_voice(user.id)
+
+            success, message = await self.user_subscriptions.revoke_subscription(user.id)
+
+            if success:
+                # Release voice if user had one
+                if claimed_voice:
+                    await self.voice_claims.release_voice(user.id)
+                    voice_note = f"\n**Claimed voice released:** {claimed_voice}"
+                else:
+                    voice_note = ""
+
+                embed = discord.Embed(
+                    title="✅ Subscription Revoked",
+                    description=f"{message}{voice_note}",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(name="User", value=user.mention)
+                embed.add_field(name="Revoked by", value=interaction.user.mention)
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                logger.info(f'Admin {interaction.user} revoked subscription for {user}')
+            else:
+                await interaction.response.send_message(f"❌ {message}", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f'Failed to revoke subscription: {e}')
+            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+
+    @admin_voice_group.command(name="list-subscriptions", description="List all active subscriptions")
+    @app_commands.check(is_admin_or_owner)
+    async def list_subscriptions(self, interaction: discord.Interaction):
+        """List all active voice claiming subscriptions"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            subs = await self.user_subscriptions.list_subscribers()
+
+            if not subs:
+                await interaction.response.send_message(
+                    "No active subscriptions found.",
+                    ephemeral=True
+                )
+                return
+
+            embed = discord.Embed(
+                title="Active Voice Subscriptions",
+                color=discord.Color.blue()
+            )
+
+            for sub in subs:
+                user_id = sub['user_id']
+                tier = sub['tier']
+                granted_date = sub['subscribed_at'].strftime('%Y-%m-%d') if sub['subscribed_at'] else 'Unknown'
+                expires = sub['expires_at'].strftime('%Y-%m-%d') if sub['expires_at'] else 'Never'
+
+                # Get claimed voice if any
+                claimed_voice = await self.voice_claims.get_user_claimed_voice(user_id)
+                claimed_text = f"\n**Claimed Voice:** {claimed_voice}" if claimed_voice else "\n**Claimed Voice:** None"
+
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                    user_name = user.name
+                except:
+                    user_name = f"ID: {user_id}"
+
+                embed.add_field(
+                    name=f"{user_name}",
+                    value=f"**Tier:** {tier}\n**Granted:** {granted_date}\n**Expires:** {expires}{claimed_text}",
+                    inline=False
+                )
+
+            embed.set_footer(text=f"Total: {len(subs)} subscription(s)")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f'Failed to list subscriptions: {e}')
+            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+
+    @admin_voice_group.command(name="subscription-info", description="Show detailed subscription info for a user")
+    @app_commands.describe(user="User to check subscription for")
+    @app_commands.check(is_admin_or_owner)
+    async def subscription_info(self, interaction: discord.Interaction, user: discord.User):
+        """Get detailed subscription information for a user"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            sub_info = await self.user_subscriptions.get_subscription(user.id)
+
+            if not sub_info:
+                await interaction.response.send_message(
+                    f"{user.mention} does not have an active subscription.",
+                    ephemeral=True
+                )
+                return
+
+            # Get claimed voice if any
+            claimed_voice = await self.voice_claims.get_user_claimed_voice(user.id)
+
+            embed = discord.Embed(
+                title=f"Subscription Info: {user.name}",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(name="User", value=user.mention, inline=False)
+            embed.add_field(name="Tier", value=sub_info['tier'])
+            embed.add_field(name="Status", value="✅ Active" if sub_info['is_active'] else "❌ Inactive")
+            embed.add_field(name="Subscribed", value=sub_info['subscribed_at'].strftime('%Y-%m-%d %H:%M:%S'))
+            expires = sub_info['expires_at'].strftime('%Y-%m-%d') if sub_info['expires_at'] else 'Never'
+            embed.add_field(name="Expires", value=expires)
+            embed.add_field(name="Claimed Voice", value=claimed_voice or "None", inline=False)
+
+            if sub_info['notes']:
+                embed.add_field(name="Notes", value=sub_info['notes'], inline=False)
+
+            if sub_info['granted_by']:
+                try:
+                    granted_by_user = await self.bot.fetch_user(sub_info['granted_by'])
+                    embed.add_field(name="Granted by", value=granted_by_user.mention)
+                except:
+                    embed.add_field(name="Granted by", value=f"ID: {sub_info['granted_by']}")
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f'Failed to get subscription info: {e}')
+            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+
+    @admin_voice_group.command(name="cleanup-expired", description="Manually cleanup expired subscriptions")
+    @app_commands.check(is_admin_or_owner)
+    async def cleanup_expired_subscriptions_cmd(self, interaction: discord.Interaction):
+        """Manually trigger cleanup of expired subscriptions"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # Run cleanup
+            expired_count = await self.user_subscriptions.check_and_cleanup_expired()
+
+            # Release voices for expired subscriptions
+            expired_subs = await self.user_subscriptions.list_expired_subscriptions()
+            voices_released = 0
+            for sub_info in expired_subs:
+                count = await self.voice_claims.release_voices_for_subscription(sub_info['id'])
+                voices_released += count
+
+            embed = discord.Embed(
+                title="✅ Cleanup Completed",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Subscriptions Processed", value=str(expired_count))
+            embed.add_field(name="Voices Released", value=str(voices_released))
+            embed.add_field(name="Executed by", value=interaction.user.mention)
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            logger.info(f'Admin {interaction.user} ran manual subscription cleanup: {expired_count} subs, {voices_released} voices')
+
+        except Exception as e:
+            logger.error(f'Failed to cleanup expired subscriptions: {e}')
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
+
+    @admin_voice_group.command(name="reassign-voice", description="Reassign any voice to any subscribed user")
+    @app_commands.describe(
+        voice="Voice ID to reassign (e.g., Tichro, M1, F2)",
+        user="User to assign the voice to"
+    )
+    @app_commands.check(is_admin_or_owner)
+    async def reassign_voice(self, interaction: discord.Interaction, voice: str, user: discord.User):
+        """Force reassign a voice to a user (admin only)"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # Get available voices
+            if not hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
+                await interaction.followup.send(
+                    "Current TTS engine does not support voice selection",
+                    ephemeral=True
+                )
+                return
+
+            voices = self.tts_engine.AVAILABLE_VOICES
+
+            # Find voice case-insensitively
+            voice_lower = voice.lower()
+            matched_voice = None
+            for available_voice in voices.keys():
+                if available_voice.lower() == voice_lower:
+                    matched_voice = available_voice
+                    break
+
+            if matched_voice is None:
+                available = ', '.join(sorted(voices.keys()))
+                await interaction.followup.send(
+                    f'Invalid voice **{voice}**\nAvailable: {available}',
+                    ephemeral=True
+                )
+                return
+
+            voice = matched_voice
+
+            # Check if voice is protected (cannot be reassigned)
+            protected_voices = ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']
+            if voice in protected_voices:
+                await interaction.followup.send(
+                    f'Voice **{voice}** is a public voice and cannot be reassigned.',
+                    ephemeral=True
+                )
+                return
+
+            # Check if target user has an active subscription
+            is_subscribed = await self.user_subscriptions.is_subscribed(user.id)
+            if not is_subscribed:
+                await interaction.followup.send(
+                    f'{user.mention} does not have an active subscription. Grant them a subscription first.',
+                    ephemeral=True
+                )
+                return
+
+            # Get target user's subscription
+            sub_info = await self.user_subscriptions.get_subscription(user.id)
+
+            # Release voice if currently claimed by someone else
+            current_owner = await self.voice_claims.get_voice_owner(voice)
+            if current_owner and current_owner != user.id:
+                await self.voice_claims.release_voice(current_owner)
+                try:
+                    previous_user = await self.bot.fetch_user(current_owner)
+                    previous_name = previous_user.mention
+                except:
+                    previous_name = f"User {current_owner}"
+
+                # Reset previous owner's voice to M1
+                await self.user_preferences.set_preferences(current_owner, voice_name='M1')
+                previous_note = f"\n**Released from:** {previous_name}"
+            else:
+                previous_note = ""
+
+            # Release any previously claimed voice from target user
+            user_previous_voice = await self.voice_claims.get_user_claimed_voice(user.id)
+            if user_previous_voice:
+                await self.voice_claims.release_voice(user.id)
+                released_note = f"\n**Released previous voice:** {user_previous_voice}"
+            else:
+                released_note = ""
+
+            # Claim the voice for the target user
+            success, message = await self.voice_claims.claim_voice(
+                user.id,
+                voice,
+                sub_info['id'],
+                voice_description=voices[voice]
+            )
+
+            if success:
+                # Auto-set as preferred voice
+                await self.user_preferences.set_preferences(user.id, voice_name=voice)
+
+                embed = discord.Embed(
+                    title="✅ Voice Reassigned",
+                    description=f"{message}",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Voice", value=f"**{voice}** - {voices[voice]}", inline=False)
+                embed.add_field(name="Assigned to", value=user.mention)
+                embed.add_field(name="Reassigned by", value=interaction.user.mention)
+                if previous_note:
+                    embed.add_field(name="Previous Owner", value=previous_note.strip(), inline=False)
+                if released_note:
+                    embed.add_field(name="Previous Voice Released", value=released_note.strip(), inline=False)
+
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                logger.info(f'Admin {interaction.user} reassigned voice {voice} to {user}')
+            else:
+                await interaction.followup.send(
+                    f"❌ Failed to reassign voice: {message}",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            logger.error(f'Failed to reassign voice: {e}')
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
+
 
     @tts_group.command(name="speed", description="Adjust speech speed")
     @app_commands.describe(speed="Speed multiplier (0.5 = slow, 1.0 = normal, 2.0 = fast)")
@@ -385,6 +796,15 @@ class TTS(commands.Cog):
                 )
                 return
 
+            # Check user subscription status
+            is_subscribed = await self.user_subscriptions.is_subscribed(interaction.user.id)
+            user_claimed_voice = None
+            all_claimed_voices = {}
+
+            if is_subscribed:
+                user_claimed_voice = await self.voice_claims.get_user_claimed_voice(interaction.user.id)
+                all_claimed_voices = await self.voice_claims.get_all_claimed_voices()
+
             # Create embed with voice options
             embed = discord.Embed(
                 title='Available TTS Voices',
@@ -392,18 +812,93 @@ class TTS(commands.Cog):
                 color=discord.Color.blue()
             )
 
-            for voice_id, description in sorted(voices.items()):
+            # Add subscription status
+            if is_subscribed:
+                sub_info = await self.user_subscriptions.get_subscription(interaction.user.id)
+                expires = sub_info['expires_at'].strftime('%Y-%m-%d') if sub_info['expires_at'] else 'Never'
                 embed.add_field(
-                    name=f"`{voice_id}`",
-                    value=description,
+                    name="📋 Your Subscription Status",
+                    value=f"✅ Active (Tier: {sub_info['tier']})\nExpires: {expires}",
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="📋 Subscription Status",
+                    value="❌ Not subscribed\nAsk the server owner to grant you subscription access to claim exclusive voices!",
                     inline=False
                 )
 
-            embed.add_field(
-                name='Usage',
-                value='Use `/tts voice set <voice_id>` to change your voice',
-                inline=False
-            )
+            # Protected voices that are always public and cannot be claimed
+            protected_voices = ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']
+
+            # Show claimed voices section
+            if is_subscribed and user_claimed_voice:
+                embed.add_field(
+                    name="✨ Your Claimed Voice",
+                    value=f"**{user_claimed_voice}** - {voices.get(user_claimed_voice, 'N/A')}\n*(Exclusive for you while subscribed)*",
+                    inline=False
+                )
+
+            # Show always-public voices
+            public_voices = {v: desc for v, desc in voices.items() if v in protected_voices}
+            if public_voices:
+                embed.add_field(
+                    name="🔓 Public Voices (Always Available - Cannot Claim)",
+                    value="\n".join([f"`{v}` - {desc}" for v, desc in sorted(public_voices.items())]),
+                    inline=False
+                )
+
+            # Show claimable unclaimed voices
+            if is_subscribed:
+                claimable_unclaimed = {v: desc for v, desc in voices.items()
+                                      if v not in all_claimed_voices and v not in protected_voices}
+            else:
+                claimable_unclaimed = {v: desc for v, desc in voices.items() if v not in protected_voices}
+
+            if claimable_unclaimed:
+                claim_status = "(Available to claim)" if is_subscribed else "(Use `/tts voice set` to use)"
+                embed.add_field(
+                    name=f"🎤 Claimable Voices {claim_status}",
+                    value="\n".join([f"`{v}` - {desc}" for v, desc in sorted(claimable_unclaimed.items())]),
+                    inline=False
+                )
+
+            # Show unavailable voices if subscribed
+            if is_subscribed and len(all_claimed_voices) > 0:
+                unavailable = {v: all_claimed_voices[v] for v in all_claimed_voices if v != user_claimed_voice}
+                if unavailable:
+                    unavailable_text = ""
+                    for voice_id, owner_id in sorted(unavailable.items()):
+                        try:
+                            owner = await self.bot.fetch_user(owner_id)
+                            owner_name = owner.name
+                        except:
+                            owner_name = f"User {owner_id}"
+                        unavailable_text += f"`{voice_id}` (claimed by {owner_name})\n"
+
+                    embed.add_field(
+                        name="🔒 Unavailable (Claimed by Others)",
+                        value=unavailable_text.strip(),
+                        inline=False
+                    )
+
+            # Add usage instructions
+            if is_subscribed:
+                embed.add_field(
+                    name="Usage",
+                    value="""
+• `/tts voice claim-voice <voice>` - Claim an exclusive voice (1 per subscription)
+• `/tts voice claim-release` - Release your claimed voice
+• `/tts voice set <voice>` - Change your voice to any unclaimed voice or your claimed voice
+                    """,
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Usage",
+                    value="Use `/tts voice set <voice_id>` to change your voice to any public voice",
+                    inline=False
+                )
 
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -449,6 +944,22 @@ class TTS(commands.Cog):
 
             voice = matched_voice
 
+            # Check if voice is claimed by someone else
+            voice_owner = await self.voice_claims.get_voice_owner(voice)
+            if voice_owner and voice_owner != interaction.user.id:
+                try:
+                    owner = await self.bot.fetch_user(voice_owner)
+                    owner_name = owner.mention
+                except:
+                    owner_name = f"User {voice_owner}"
+
+                await interaction.response.send_message(
+                    f'Voice **{voice}** is exclusively claimed by {owner_name}.\n'
+                    f'If you have a subscription, you can claim your own exclusive voice with `/tts claim-voice`',
+                    ephemeral=True
+                )
+                return
+
             # Save preference
             success = await self.user_preferences.set_preferences(
                 interaction.user.id,
@@ -469,6 +980,160 @@ class TTS(commands.Cog):
 
         except Exception as e:
             logger.error(f'Failed to set voice: {e}')
+            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+
+    @voice_group.command(name="claim-voice", description="Claim an exclusive voice (requires subscription)")
+    @app_commands.describe(voice="Voice ID to claim (e.g., M1, F2)")
+    async def claim_voice(self, interaction: discord.Interaction, voice: str):
+        """Claim an exclusive voice while subscribed"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            # Check if user has active subscription
+            is_subscribed = await self.user_subscriptions.is_subscribed(interaction.user.id)
+            if not is_subscribed:
+                await interaction.response.send_message(
+                    "You need an active subscription to claim voices. Contact the server owner to grant you subscription access.",
+                    ephemeral=True
+                )
+                return
+
+            # Get subscription info
+            sub_info = await self.user_subscriptions.get_subscription(interaction.user.id)
+            if not sub_info:
+                await interaction.response.send_message(
+                    "Subscription not found. Contact the server owner.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if user already has a claimed voice
+            has_claim = await self.voice_claims.user_has_claimed_voice(interaction.user.id)
+            if has_claim:
+                current_voice = await self.voice_claims.get_user_claimed_voice(interaction.user.id)
+                await interaction.response.send_message(
+                    f"You already claimed voice **{current_voice}**. Release it first with `/tts claim-release`",
+                    ephemeral=True
+                )
+                return
+
+            # Get available voices
+            if not hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
+                await interaction.response.send_message(
+                    "Current TTS engine does not support voice selection",
+                    ephemeral=True
+                )
+                return
+
+            voices = self.tts_engine.AVAILABLE_VOICES
+
+            # Find voice case-insensitively
+            voice_lower = voice.lower()
+            matched_voice = None
+            for available_voice in voices.keys():
+                if available_voice.lower() == voice_lower:
+                    matched_voice = available_voice
+                    break
+
+            if matched_voice is None:
+                available = ', '.join(sorted(voices.keys()))
+                await interaction.response.send_message(
+                    f'Invalid voice **{voice}**\nAvailable: {available}',
+                    ephemeral=True
+                )
+                return
+
+            voice = matched_voice
+
+            # Check if voice is in protected/public-only list
+            protected_voices = ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']
+            if voice in protected_voices:
+                await interaction.response.send_message(
+                    f'Voice **{voice}** is a public voice and cannot be claimed. It must remain available to all users.',
+                    ephemeral=True
+                )
+                return
+
+            # Check if voice is already claimed
+            is_claimed = await self.voice_claims.is_voice_claimed(voice)
+            if is_claimed:
+                owner_id = await self.voice_claims.get_voice_owner(voice)
+                await interaction.response.send_message(
+                    f'Voice **{voice}** is already claimed by <@{owner_id}>',
+                    ephemeral=True
+                )
+                return
+
+            # Claim the voice
+            success, message = await self.voice_claims.claim_voice(
+                interaction.user.id,
+                voice,
+                sub_info['id'],
+                voice_description=voices[voice]
+            )
+
+            if success:
+                # Auto-set claimed voice as preferred voice
+                await self.user_preferences.set_preferences(
+                    interaction.user.id,
+                    voice_name=voice
+                )
+                await interaction.response.send_message(
+                    f"✅ {message}\nVoice **{voice}** is now your exclusive voice for this subscription!",
+                    ephemeral=True
+                )
+                logger.info(f'User {interaction.user} claimed voice {voice}')
+            else:
+                await interaction.response.send_message(
+                    f"❌ {message}",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            logger.error(f'Failed to claim voice: {e}')
+            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+
+    @voice_group.command(name="claim-release", description="Release your claimed exclusive voice")
+    async def claim_release(self, interaction: discord.Interaction):
+        """Release a claimed exclusive voice"""
+        if not self.initialized:
+            await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
+            return
+
+        try:
+            # Check if user has a claimed voice
+            has_claim = await self.voice_claims.user_has_claimed_voice(interaction.user.id)
+            if not has_claim:
+                await interaction.response.send_message(
+                    "You do not have a claimed voice to release",
+                    ephemeral=True
+                )
+                return
+
+            # Release the voice
+            success, message, voice_id = await self.voice_claims.release_voice(interaction.user.id)
+
+            if success:
+                # Reset voice preference to default (M1)
+                await self.user_preferences.set_preferences(
+                    interaction.user.id,
+                    voice_name='M1'
+                )
+                await interaction.response.send_message(
+                    f"✅ {message}\nYour voice preference has been reset to M1.",
+                    ephemeral=True
+                )
+                logger.info(f'User {interaction.user} released voice {voice_id}')
+            else:
+                await interaction.response.send_message(
+                    f"❌ {message}",
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            logger.error(f'Failed to release voice: {e}')
             await interaction.response.send_message(f'Error: {e}', ephemeral=True)
 
 
@@ -633,7 +1298,7 @@ class TTS(commands.Cog):
                         # Use self_deaf=True to reduce overhead (bot only sends audio, doesn't receive)
                         # Increase timeout to 90 seconds for slow Discord voice servers
                         logger.debug(f'Attempting voice connection (attempt {attempt + 1}/{max_retries}, timeout=90s, self_deaf=True)')
-                        await voice_channel.connect(timeout=90.0, reconnect=True, self_deaf=True)
+                        await voice_channel.connect(timeout=90.0, self_deaf=True)
                         logger.debug(f'Voice connection successful on attempt {attempt + 1}')
                         break
                     except asyncio.TimeoutError as e:
@@ -760,7 +1425,7 @@ class TTS(commands.Cog):
                 try:
                     # Use longer timeout (90 seconds) for voice connection
                     logger.debug(f'Auto-joining {user_voice.channel} in {guild.name}')
-                    await user_voice.channel.connect(timeout=90.0, reconnect=True, self_deaf=True)
+                    await user_voice.channel.connect(timeout=90.0, self_deaf=True)
                     logger.info(f'Bot auto-joined {user_voice.channel} in {guild.name}')
                     await self.queue_manager.start_processor(guild.id)
                 except asyncio.TimeoutError:
@@ -769,19 +1434,27 @@ class TTS(commands.Cog):
                 except Exception as e:
                     logger.error(f'Failed to auto-join voice channel: {e}')
                     return
-            elif not guild.voice_client.is_connected():
-                # Disconnect stale connection and reconnect
+            elif guild.voice_client and not guild.voice_client.is_connected():
+                # Only attempt reconnect if connection state is explicitly stale
                 try:
-                    logger.debug(f'Reconnecting to {user_voice.channel} in {guild.name}')
-                    await guild.voice_client.disconnect(force=True)
-                    await user_voice.channel.connect(timeout=90.0, reconnect=True, self_deaf=True)
+                    channel_name = user_voice.channel.name
+                    is_private = isinstance(user_voice.channel, discord.VoiceChannel)
+                    logger.debug(f'Stale connection detected in {channel_name} (private={is_private}). Attempting reconnect.')
+
+                    try:
+                        await guild.voice_client.disconnect(force=True)
+                    except Exception as disconnect_err:
+                        logger.debug(f'Error disconnecting stale client: {disconnect_err}')
+
+                    await user_voice.channel.connect(timeout=90.0, self_deaf=True)
                     logger.info(f'Bot reconnected to {user_voice.channel} in {guild.name}')
                     await self.queue_manager.start_processor(guild.id)
                 except asyncio.TimeoutError:
                     logger.error(f'Failed to reconnect to voice channel: Connection timeout (>90s)')
                     return
                 except Exception as e:
-                    logger.error(f'Failed to reconnect to voice channel: {e}')
+                    logger.error(f'Failed to reconnect to voice channel: {type(e).__name__}: {e}')
+                    logger.debug(f'Reconnect error details: {e}')
                     return
             elif guild.voice_client.channel != user_voice.channel:
                 await guild.voice_client.move_to(user_voice.channel)
@@ -797,8 +1470,8 @@ class TTS(commands.Cog):
             supported_languages = self.tts_engine.get_available_languages()
             language = prefs['language'] if prefs['language'] in supported_languages else 'en'
 
-            # Get user's preferred voice (use engine's voice if available, otherwise use default)
-            voice_name = prefs.get('voice_name', 'default')
+            # Get user's preferred voice (use engine's voice if available, otherwise use M1)
+            voice_name = prefs.get('voice_name', 'M1')
 
             # Use default voice file as fallback (may not be needed for all engines)
             voice_file = Path('data/voices/default.wav')

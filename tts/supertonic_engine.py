@@ -21,7 +21,7 @@ class SupertonicEngine(BaseTTSEngine):
     # Supertonic supported languages and voices
     SUPPORTED_LANGUAGES = ['en', 'ko', 'es', 'pt', 'fr']
     AVAILABLE_VOICES = {
-        'default': 'Mature and wise',
+        'Tichro': 'Mature and wise',
         'M1': 'Male - Warm and conversational',
         'M2': 'Male - Formal and professional',
         'M3': 'Male - Clear and neutral',

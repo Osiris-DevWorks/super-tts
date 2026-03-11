@@ -20,7 +20,7 @@ class QueuedMessage:
     voice_file_path: str
     speed: float = 1.0
     language: str = 'en'
-    voice_name: str = 'default'
+    voice_name: str = 'M1'
 
 
 class GuildQueue:
