@@ -953,20 +953,25 @@ class TTS(commands.Cog):
             voice = matched_voice
 
             # Check if voice is claimed by someone else
-            voice_owner = await self.voice_claims.get_voice_owner(voice)
-            if voice_owner and voice_owner != interaction.user.id:
-                try:
-                    owner = await self.bot.fetch_user(voice_owner)
-                    owner_name = owner.mention
-                except:
-                    owner_name = f"User {voice_owner}"
+            try:
+                voice_owner = await self.voice_claims.get_voice_owner(voice)
+                if voice_owner and voice_owner != interaction.user.id:
+                    try:
+                        owner = await self.bot.fetch_user(voice_owner)
+                        owner_name = owner.mention
+                    except:
+                        owner_name = f"User {voice_owner}"
 
-                await interaction.response.send_message(
-                    f'Voice **{voice}** is exclusively claimed by {owner_name}.\n'
-                    f'If you have a subscription, you can claim your own exclusive voice with `/tts claim-voice`',
-                    ephemeral=True
-                )
-                return
+                    await interaction.response.send_message(
+                        f'Voice **{voice}** is exclusively claimed by {owner_name}.\n'
+                        f'If you have a subscription, you can claim your own exclusive voice with `/tts claim-voice`',
+                        ephemeral=True
+                    )
+                    return
+            except Exception as e:
+                logger.error(f'Error checking voice claim for {voice}: {e}')
+                # If there's an error checking claims, still allow setting the voice
+                pass
 
             # Save preference
             success = await self.user_preferences.set_preferences(
