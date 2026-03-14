@@ -1493,13 +1493,16 @@ class TTS(commands.Cog):
             supported_languages = self.tts_engine.get_available_languages()
             language = prefs['language'] if prefs['language'] in supported_languages else 'en'
 
-            # Get user's voice: claimed voice takes priority over preference
+            # Get user's voice: respect preference, but validate against claims
             voice_name = prefs.get('voice_name', 'M1')
             if self.voice_claims:
                 claimed_voice = await self.voice_claims.get_user_claimed_voice(message.author.id)
-                if claimed_voice:
-                    voice_name = claimed_voice
+                # Only use claimed voice if user hasn't changed their preference away from it
+                # This allows users to set a different voice even if they have a claim
+                if claimed_voice and voice_name == claimed_voice:
                     logger.debug(f'Using claimed voice {claimed_voice} for user {message.author}')
+                elif claimed_voice and voice_name != claimed_voice:
+                    logger.debug(f'User {message.author} has claimed {claimed_voice} but preference is {voice_name}, respecting preference')
 
             # Check if the selected voice is claimed by someone else
             if self.voice_claims:
