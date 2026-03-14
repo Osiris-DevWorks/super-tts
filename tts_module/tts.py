@@ -109,6 +109,7 @@ class TTS(commands.Cog):
             # Initialize queue manager with concurrent processing limit
             max_concurrent = self.config.get('tts.max_concurrent', 4)
             self.queue_manager = QueueManager(max_concurrent=max_concurrent)
+            logger.info(f'Queue Manager initialized with concurrency: {self.queue_manager.max_concurrent}')
 
             # Set up queue processor
             async def process_queue(guild_id: int, message: QueuedMessage):

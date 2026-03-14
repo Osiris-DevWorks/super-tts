@@ -16,7 +16,7 @@ tts:
   warmup: true
 
   # Maximum concurrent TTS tasks
-  max_concurrent: 6
+  max_concurrent: 20
 
   # Model directory (will download if not present)
   model_path: "~/.local/share/TTS"
