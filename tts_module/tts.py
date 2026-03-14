@@ -1499,10 +1499,13 @@ class TTS(commands.Cog):
                 claimed_voice = await self.voice_claims.get_user_claimed_voice(message.author.id)
                 # Only use claimed voice if user hasn't changed their preference away from it
                 # This allows users to set a different voice even if they have a claim
-                if claimed_voice and voice_name == claimed_voice:
-                    logger.debug(f'Using claimed voice {claimed_voice} for user {message.author}')
-                elif claimed_voice and voice_name != claimed_voice:
-                    logger.debug(f'User {message.author} has claimed {claimed_voice} but preference is {voice_name}, respecting preference')
+                if claimed_voice:
+                    if voice_name == claimed_voice:
+                        logger.info(f'User {message.author} ({message.author.id}): Using claimed voice {claimed_voice}')
+                    else:
+                        logger.info(f'User {message.author} ({message.author.id}): Has claimed {claimed_voice} but preference is {voice_name} - using preference')
+                else:
+                    logger.debug(f'User {message.author} ({message.author.id}): Using preference voice {voice_name}, no claim')
 
             # Check if the selected voice is claimed by someone else
             if self.voice_claims:
