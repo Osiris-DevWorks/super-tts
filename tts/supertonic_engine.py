@@ -92,6 +92,16 @@ class SupertonicEngine(BaseTTSEngine):
             # Pre-load the voice style
             self.voice_style = self.tts.get_voice_style(voice_name=voice)
             logger.info(f'Supertonic TTS initialized with voice: {voice}')
+
+            # Pre-cache ALL voice styles at startup to avoid disk I/O on every request
+            self._voice_style_cache = {}
+            for v in self.AVAILABLE_VOICES:
+                try:
+                    self._voice_style_cache[v] = self.tts.get_voice_style(voice_name=v)
+                    logger.debug(f'Pre-cached voice style: {v}')
+                except Exception as e:
+                    logger.warning(f'Could not pre-cache voice {v}: {e}')
+
         except Exception as e:
             logger.error(f'Failed to load Supertonic engine: {e}')
             raise
@@ -150,8 +160,11 @@ class SupertonicEngine(BaseTTSEngine):
             try:
                 logger.debug(f'Supertonic synthesizing with voice {selected_voice}: {text[:50]}...')
 
-                # Get voice style for selected voice
-                voice_style = self.tts.get_voice_style(voice_name=selected_voice)
+                # Use cache instead of disk read on every request
+                voice_style = self._voice_style_cache.get(selected_voice)
+                if voice_style is None:
+                    logger.warning(f'Voice {selected_voice} not in cache, falling back to default')
+                    voice_style = self._voice_style_cache.get(self.voice_name)
 
                 # Synthesize using Supertonic
                 wav, duration = self.tts.synthesize(text, voice_style=voice_style)
@@ -214,9 +227,10 @@ class SupertonicEngine(BaseTTSEngine):
         """Warmup model to eliminate first-call latency"""
         logger.info('Warming up Supertonic model...')
         try:
+            warmup_style = self._voice_style_cache.get(self.voice_name, self.voice_style)
             _ = self.tts.synthesize(
                 "The quick brown fox jumps over the lazy dog.",
-                voice_style=self.voice_style
+                voice_style=warmup_style
             )
             logger.info('Supertonic warmup complete')
         except Exception as e:

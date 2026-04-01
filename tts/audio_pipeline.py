@@ -285,7 +285,7 @@ class AudioPipeline:
         loop = asyncio.get_event_loop()
 
         def _convert():
-            """Fast resampling using scipy instead of FFmpeg for speed"""
+            """Fast resampling using scipy resample_poly for speed"""
             # Convert to numpy array if it's a list
             wav_array = np.array(wav) if isinstance(wav, list) else wav
 
@@ -299,18 +299,21 @@ class AudioPipeline:
 
             try:
                 # Try using scipy for faster resampling (if available)
-                from scipy import signal
+                from scipy.signal import resample_poly
+                from math import gcd
 
-                # Calculate resampling ratio
-                ratio = 48000.0 / input_sample_rate
-                num_samples = int(len(wav_array) * ratio)
+                # Calculate resampling ratio using GCD for efficient polyphase filter
+                g = gcd(48000, input_sample_rate)
+                up = 48000 // g
+                down = input_sample_rate // g
 
-                # Use fast resampling
-                resampled = signal.resample(wav_array, num_samples)
-                logger.debug(f'Resampled {input_sample_rate}Hz -> 48kHz using scipy ({len(wav_array)} -> {num_samples} samples)')
+                # Use fast polyphase resampling
+                resampled = resample_poly(wav_array, up, down)
+                logger.debug(f'Resampled {input_sample_rate}Hz -> 48kHz using resample_poly '
+                             f'(up={up}, down={down}, {len(wav_array)} -> {len(resampled)} samples)')
 
             except ImportError:
-                logger.debug('scipy not available, using simple linear interpolation')
+                logger.debug('scipy not available, using simple linear interpolation fallback')
                 # Fallback: simple linear interpolation without scipy
                 ratio = 48000.0 / input_sample_rate
                 num_samples = int(len(wav_array) * ratio)
