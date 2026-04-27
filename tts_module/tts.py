@@ -6,6 +6,7 @@ Uses PostgreSQL database with super_tts schema
 
 import logging
 import asyncio
+import sys
 import time
 import traceback
 from pathlib import Path
@@ -22,6 +23,12 @@ from utils.config_loader import ConfigLoader
 from common.roles import has_any_role
 
 logger = logging.getLogger("super-tts")
+
+
+def _resource_path(rel: str) -> Path:
+    """Resolve a path bundled with the app, working in dev and PyInstaller builds."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return base / rel
 
 
 async def is_admin_or_owner(interaction: discord.Interaction) -> bool:
@@ -77,7 +84,7 @@ class TTS(commands.Cog):
             logger.info("Initializing TTS Engine...")
 
             # Load config
-            self.config = ConfigLoader(Path('config/config.yaml'))
+            self.config = ConfigLoader(_resource_path('config/config.yaml'))
 
             # Get model name from config (default to xtts_v2 for backward compatibility)
             model_name = self.config.get('tts.model', 'xtts_v2')
