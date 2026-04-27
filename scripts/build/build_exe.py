@@ -79,10 +79,16 @@ voices_dir = os.path.join(root_dir, "voices")
 icon_path = os.path.join(root_dir, "assets", "super-tts.ico")
 
 args = [
-    os.path.join(root_dir, "main.py"),
+    # Entry point is the GUI wrapper — it sets SUPER_TTS_GUI_MODE=1 then
+    # imports main.py and runs the bot in a QThread. Docker/Railway still
+    # use main.py directly and never load gui_main.py.
+    os.path.join(root_dir, "gui_main.py"),
     "--name", exe_name,
-    # No --windowed: this is a Discord bot. The console window IS the UI —
-    # users want to see the connection logs and any errors at a glance.
+    # --windowed = no console window. The bot's stdout/stderr is surfaced
+    # in the in-app Logs tab via the Qt-bridge logging handler in
+    # gui/log_tab.py, so a console would just be a duplicate (and an ugly
+    # one — it'd briefly flash on launch and confuse end users).
+    "--windowed",
     "--noupx",  # AV scanners flag UPX-packed exes; sibling projects also disabled
     "--onedir",
     "--distpath", os.path.join(root_dir, "dist"),
@@ -98,7 +104,9 @@ args = [
 
     # Hidden imports — modules PyInstaller's static graph misses because
     # they're loaded dynamically (asyncpg cython bits, discord voice,
-    # the cog discovered via load_extension at runtime, scipy submodules).
+    # the cog discovered via load_extension at runtime, scipy submodules,
+    # PyQt6 platform plugins, and the bot module imported lazily inside
+    # gui/bot_runner.py's QThread).
     "--hidden-import=asyncpg",
     "--hidden-import=asyncpg.pgproto.pgproto",
     "--hidden-import=discord",
@@ -107,6 +115,7 @@ args = [
     "--hidden-import=nacl.bindings",
     "--hidden-import=scipy.signal",
     "--hidden-import=scipy._lib.messagestream",
+    "--hidden-import=main",
     "--hidden-import=tts_module.tts",
     "--hidden-import=tts_module.db_models",
     "--hidden-import=tts.supertonic_engine",
@@ -119,11 +128,21 @@ args = [
     "--hidden-import=db.init_db",
     "--hidden-import=common.constants",
     "--hidden-import=common.roles",
+    "--hidden-import=gui.main_window",
+    "--hidden-import=gui.status_tab",
+    "--hidden-import=gui.settings_tab",
+    "--hidden-import=gui.log_tab",
+    "--hidden-import=gui.about_tab",
+    "--hidden-import=gui.bot_runner",
+    "--hidden-import=gui.theme",
+    "--hidden-import=gui.settings",
 
-    # Pull every submodule + datafile of these packages — they have dynamic
-    # registries / native shims that the import graph alone won't catch.
+    # Pull every submodule + datafile of these packages — dynamic
+    # registries / native shims / platform plugins that the static graph
+    # alone won't catch.
     "--collect-all=supertonic",
     "--collect-all=onnxruntime",
+    "--collect-submodules=PyQt6",
 
     # Drop dev tooling and the dead Coqui-TTS code path. Coqui ships a huge
     # transitive footprint (extra torch builds, trainer, etc.) that nothing

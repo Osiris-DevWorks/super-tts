@@ -10,14 +10,15 @@ if exist dist rmdir /s /q dist
 echo   - Old builds removed
 echo.
 
-echo Step 2: Installing PyInstaller (if needed)...
-.venv\Scripts\python.exe -m pip install pyinstaller --quiet
+echo Step 2: Installing PyInstaller + PyQt6 (if needed)...
+.venv\Scripts\python.exe -m pip install pyinstaller PyQt6 --quiet
 if errorlevel 1 (
-    echo WARNING: Could not install PyInstaller into .venv
-    echo Please install manually: .venv\Scripts\pip install pyinstaller
+    echo WARNING: Could not install PyInstaller / PyQt6 into .venv
+    echo Please install manually:
+    echo     .venv\Scripts\pip install pyinstaller PyQt6
     pause
 )
-echo   - PyInstaller ready
+echo   - PyInstaller + PyQt6 ready
 echo.
 
 echo Step 3: Building executable...

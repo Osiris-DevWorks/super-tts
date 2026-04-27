@@ -123,7 +123,10 @@ async def main():
 
         async with bot:
             await load_extensions()
-            await bot.start(DISCORD_TOKEN)
+            # Re-read DISCORD_TOKEN at start time so the GUI can set the env
+            # var after the user enters their token in Settings, without us
+            # having captured the (then-absent) value at import time.
+            await bot.start(os.getenv("DISCORD_TOKEN") or DISCORD_TOKEN)
     finally:
         # Ensure database is closed
         await db.close()
