@@ -26,8 +26,20 @@ def _bootstrap() -> None:
     """Pre-import wiring that has to happen before main.py is touched."""
     os.environ["SUPER_TTS_GUI_MODE"] = "1"
 
-    # Mirror the .env file's contents into os.environ so other modules
-    # (db.db, main, etc.) see DISCORD_TOKEN / DATABASE_URL on import.
+    # Mirror .env contents into os.environ so the Settings tab and
+    # Status tab can see DISCORD_TOKEN / DATABASE_URL on launch (otherwise
+    # they'd only become visible after the bot thread imports main.py and
+    # main.py runs its own load_dotenv).
+    #
+    # Order matches main.py's resolution exactly:
+    #   1. %APPDATA%\Osiris DevWorks\Super TTS\.env  — installer-written
+    #   2. Project-root .env via load_dotenv()'s default CWD search — the
+    #      dev path used by `poetry run python gui_main.py` from the repo.
+    try:
+        from dotenv import load_dotenv
+    except Exception:
+        return
+
     appdata = os.environ.get("APPDATA")
     env_path: Path | None = None
     if appdata:
@@ -35,12 +47,13 @@ def _bootstrap() -> None:
 
     if env_path and env_path.is_file():
         try:
-            from dotenv import load_dotenv
-
             load_dotenv(env_path)
         except Exception:
-            # python-dotenv missing or parse error — continue, the GUI
-            # will surface a missing-token state via the Settings tab.
+            pass
+    else:
+        try:
+            load_dotenv()
+        except Exception:
             pass
 
 
