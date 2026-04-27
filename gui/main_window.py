@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -46,10 +47,17 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
 
-        # Auto-connect on launch if a token is configured. Done in a single-
-        # shot timer so the window is visible by the time the bot starts —
-        # otherwise the user sees a blank app for ~1s while migrations run.
-        QTimer.singleShot(150, self._status_tab.auto_connect_if_ready)
+        # First-run UX: if there's no token yet, open on the Settings tab so
+        # users land directly on the form they need to fill in. Otherwise
+        # default to the Status tab and auto-connect.
+        if not os.getenv("DISCORD_TOKEN"):
+            self._tabs.setCurrentWidget(self._settings_tab)
+        else:
+            # Auto-connect on launch if a token is configured. Done in a
+            # single-shot timer so the window is visible by the time the bot
+            # starts — otherwise the user sees a blank app for ~1s while
+            # migrations run.
+            QTimer.singleShot(150, self._status_tab.auto_connect_if_ready)
 
     # ── UI assembly ──────────────────────────────────────────────────────
 

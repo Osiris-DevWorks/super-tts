@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -65,6 +65,22 @@ class SettingsTab(QWidget):
         intro.setWordWrap(True)
         intro.setProperty("role", "secondary")
         outer.addWidget(intro)
+
+        # First-run helper — points at the Discord Developer Portal for the
+        # most common "where do I get a token?" question.
+        token_help = QLabel(
+            'Need a token? Create a Discord application at '
+            '<a href="https://discord.com/developers/applications">'
+            'discord.com/developers/applications</a>, enable the '
+            '<b>Message Content</b>, <b>Server Members</b>, and '
+            '<b>Voice States</b> intents under the Bot tab, then copy the token.'
+        )
+        token_help.setWordWrap(True)
+        token_help.setOpenExternalLinks(True)
+        token_help.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
+        outer.addWidget(token_help)
 
         form = QFormLayout()
         form.setSpacing(10)
@@ -140,10 +156,18 @@ class SettingsTab(QWidget):
     def _load(self):
         env = gui_settings.read_env()
         self._token_edit.setText(env.get("DISCORD_TOKEN", ""))
-        self._db_edit.setText(env.get("DATABASE_URL", ""))
+        # On first launch (.env missing or empty DATABASE_URL), pre-fill with
+        # the bundled default so users don't need to know the Railway URL.
+        # They can edit it but typically just leave it.
+        self._db_edit.setText(env.get("DATABASE_URL") or gui_settings.DEFAULT_DATABASE_URL)
 
-        log_level = env.get("LOG_LEVEL", "INFO").upper()
-        idx = max(0, self._log_combo.findData(log_level if log_level in _LOG_LEVELS else "INFO"))
+        log_level = (env.get("LOG_LEVEL") or gui_settings.DEFAULT_LOG_LEVEL).upper()
+        idx = max(
+            0,
+            self._log_combo.findData(
+                log_level if log_level in _LOG_LEVELS else gui_settings.DEFAULT_LOG_LEVEL
+            ),
+        )
         self._log_combo.setCurrentIndex(idx)
 
         # Theme comes from QSettings, not .env — so this stays in sync even

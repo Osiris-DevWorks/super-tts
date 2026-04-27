@@ -29,6 +29,21 @@ KEY_THEME = "theme"
 # to read the default (gui.theme imports settings, which would loop).
 _DEFAULT_THEME_FALLBACK = "odw"
 
+# Bundled Railway public-proxy URL the GUI pre-fills into the Settings
+# tab's Database URL field on first launch. Every end-user installation
+# talks to the same shared database — they should not need to know or type
+# this value. Rotate by editing this constant and rebuilding the installer.
+#
+# ⚠️  PLACEHOLDER — replace with your real Railway public-proxy URL before
+#     producing a release build. Get it from the Railway dashboard:
+#       Project -> Postgres service -> Variables -> DATABASE_PUBLIC_URL
+#     (you may need to enable "TCP Proxy" / public networking on the
+#     Postgres service first).
+DEFAULT_DATABASE_URL = "postgresql://USER:PASSWORD@HOST.proxy.rlwy.net:PORT/railway"
+
+# Default log level when the user hasn't picked one yet.
+DEFAULT_LOG_LEVEL = "INFO"
+
 
 def _qsettings() -> QSettings:
     return QSettings(ORG_NAME, APP_NAME)
