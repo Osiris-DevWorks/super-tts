@@ -32,18 +32,27 @@ echo   - Executable created
 echo.
 
 echo Step 4: Verifying onedir build...
-if exist "dist\Super-TTS-v*\" (
-    echo   - Build folder exists: OK
+rem cmd's `if exist` doesn't expand wildcards on directories — read VERSION.TXT
+rem and check the exact folder name instead. Without this, a successful
+rem PyInstaller build still falsely reported "Build folder not found".
+set /p APPVER=<VERSION.TXT
+if exist "dist\Super-TTS-v%APPVER%\" (
+    echo   - Build folder exists: dist\Super-TTS-v%APPVER%\
 ) else (
-    echo   - ERROR: Build folder not found!
+    echo   - ERROR: Build folder not found at dist\Super-TTS-v%APPVER%\
     pause
     exit /b 1
 )
 echo.
 
 echo Step 5: Creating installer (requires Inno Setup)...
-if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+set "ISCC_EXE="
+if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC_EXE=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set "ISCC_EXE=C:\Program Files\Inno Setup 6\ISCC.exe"
+if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+if defined ISCC_EXE (
+    echo   Using "%ISCC_EXE%"
+    "%ISCC_EXE%" installer.iss
     if errorlevel 1 (
         echo WARNING: Installer creation failed
         echo You can create it manually with Inno Setup
@@ -51,9 +60,12 @@ if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
         echo   - Installer created successfully!
     )
 ) else (
-    echo WARNING: Inno Setup not found at default location
+    echo WARNING: Inno Setup not found in any of:
+    echo     C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+    echo     C:\Program Files\Inno Setup 6\ISCC.exe
+    echo     %%LOCALAPPDATA%%\Programs\Inno Setup 6\ISCC.exe
     echo Skipping installer creation
-    echo You can install Inno Setup from: https://jrsoftware.org/isdl.php
+    echo Install Inno Setup from: https://jrsoftware.org/isdl.php
     echo Or create the installer manually by opening installer.iss
 )
 echo.
