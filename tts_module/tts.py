@@ -250,11 +250,13 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Check if already monitored
             is_monitored = await self.monitored_channels.is_channel_monitored(channel.id)
             if is_monitored:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Channel {channel.mention} is already monitored!',
                     ephemeral=True
                 )
@@ -287,17 +289,17 @@ class TTS(commands.Cog):
                 )
                 embed.set_footer(text=f"Added by {interaction.user.name}")
 
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 logger.info(f'Added monitored channel: {channel.name} by {interaction.user}')
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Failed to add channel {channel.mention}',
                     ephemeral=True
                 )
 
         except Exception as e:
             logger.error(f'Error adding monitored channel: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @setup_group.command(name="remove", description="Remove a channel from auto-TTS")
     @app_commands.describe(channel="Text channel to disable auto-TTS in")
@@ -311,10 +313,12 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             is_monitored = await self.monitored_channels.is_channel_monitored(channel.id)
             if not is_monitored:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Channel {channel.mention} is not currently monitored!',
                     ephemeral=True
                 )
@@ -330,17 +334,17 @@ class TTS(commands.Cog):
                 )
                 embed.set_footer(text=f"Removed by {interaction.user.name}")
 
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 logger.info(f'Removed monitored channel: {channel.name} by {interaction.user}')
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Failed to remove channel {channel.mention}',
                     ephemeral=True
                 )
 
         except Exception as e:
             logger.error(f'Error removing monitored channel: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @setup_group.command(name="list", description="List all monitored channels")
     @has_any_role("Admin", "Tester", "Sentinel Prime", "Sentinel Supreme", "Sentinel Commander")
@@ -353,11 +357,13 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             channels = await self.monitored_channels.get_monitored_channels(interaction.guild_id)
 
             if not channels:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     'No channels are currently monitored for auto-TTS.',
                     ephemeral=True
                 )
@@ -392,11 +398,11 @@ class TTS(commands.Cog):
                 )
 
             embed.set_footer(text=f"Total: {len(channels)} channel(s)")
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             logger.error(f'Error listing monitored channels: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     # ========== Admin Voice Subscription Commands ==========
 
@@ -422,6 +428,8 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             success, message = await self.user_subscriptions.grant_subscription(
                 user_id=user.id,
@@ -445,14 +453,14 @@ class TTS(commands.Cog):
                     embed.add_field(name="Expires", value="Never")
                 embed.add_field(name="Granted by", value=interaction.user.mention)
 
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 logger.info(f'Admin {interaction.user} granted subscription to {user}')
             else:
-                await interaction.response.send_message(f"❌ {message}", ephemeral=True)
+                await interaction.followup.send(f"❌ {message}", ephemeral=True)
 
         except Exception as e:
             logger.error(f'Failed to grant subscription: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @admin_voice_group.command(name="revoke-subscription", description="Revoke a user's subscription")
     @app_commands.describe(user="User whose subscription to revoke")
@@ -465,6 +473,8 @@ class TTS(commands.Cog):
 
         # Ensure database models are initialized
         self._ensure_db_models()
+
+        await interaction.response.defer(ephemeral=True)
 
         try:
             # Release any claimed voices first
@@ -488,14 +498,14 @@ class TTS(commands.Cog):
                 embed.add_field(name="User", value=user.mention)
                 embed.add_field(name="Revoked by", value=interaction.user.mention)
 
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 logger.info(f'Admin {interaction.user} revoked subscription for {user}')
             else:
-                await interaction.response.send_message(f"❌ {message}", ephemeral=True)
+                await interaction.followup.send(f"❌ {message}", ephemeral=True)
 
         except Exception as e:
             logger.error(f'Failed to revoke subscription: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @admin_voice_group.command(name="list-subscriptions", description="List all active subscriptions")
     @app_commands.check(is_admin_or_owner)
@@ -505,11 +515,13 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             subs = await self.user_subscriptions.list_subscribers()
 
             if not subs:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "No active subscriptions found.",
                     ephemeral=True
                 )
@@ -543,11 +555,11 @@ class TTS(commands.Cog):
                 )
 
             embed.set_footer(text=f"Total: {len(subs)} subscription(s)")
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             logger.error(f'Failed to list subscriptions: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @admin_voice_group.command(name="subscription-info", description="Show detailed subscription info for a user")
     @app_commands.describe(user="User to check subscription for")
@@ -558,11 +570,13 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             sub_info = await self.user_subscriptions.get_subscription(user.id)
 
             if not sub_info:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"{user.mention} does not have an active subscription.",
                     ephemeral=True
                 )
@@ -594,11 +608,11 @@ class TTS(commands.Cog):
                 except:
                     embed.add_field(name="Granted by", value=f"ID: {sub_info['granted_by']}")
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             logger.error(f'Failed to get subscription info: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @admin_voice_group.command(name="cleanup-expired", description="Manually cleanup expired subscriptions")
     @app_commands.check(is_admin_or_owner)
@@ -773,15 +787,17 @@ class TTS(commands.Cog):
             await interaction.response.send_message("TTS engine not initialized", ephemeral=True)
             return
 
-        try:
-            # Validate speed
-            if speed < 0.5 or speed > 2.0:
-                await interaction.response.send_message(
-                    'Speed must be between 0.5 and 2.0',
-                    ephemeral=True
-                )
-                return
+        # Validate speed before deferring so the user gets immediate feedback on bad input
+        if speed < 0.5 or speed > 2.0:
+            await interaction.response.send_message(
+                'Speed must be between 0.5 and 2.0',
+                ephemeral=True
+            )
+            return
 
+        await interaction.response.defer(ephemeral=True)
+
+        try:
             # Save preference
             success = await self.user_preferences.set_preferences(
                 interaction.user.id,
@@ -789,20 +805,20 @@ class TTS(commands.Cog):
             )
 
             if success:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Speed set to **{speed}x**',
                     ephemeral=True
                 )
                 logger.info(f'User {interaction.user} set speed to {speed}')
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     'Failed to save speed preference',
                     ephemeral=True
                 )
 
         except Exception as e:
             logger.error(f'Failed to set speed: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @voice_group.command(name="list", description="List available TTS voices")
     async def voice_list(self, interaction: discord.Interaction):
@@ -814,12 +830,14 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Get available voices from engine
             if hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
                 voices = self.tts_engine.AVAILABLE_VOICES
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Current TTS engine ({self.tts_engine.model_name}) does not support voice selection",
                     ephemeral=True
                 )
@@ -913,11 +931,11 @@ class TTS(commands.Cog):
                     inline=False
                 )
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             logger.error(f'Failed to list voices: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @voice_group.command(name="set", description="Change your TTS voice")
     @app_commands.describe(voice="Voice ID (e.g., M1, F2, M4)")
@@ -930,10 +948,12 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Get available voices
             if not hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Current TTS engine does not support voice selection",
                     ephemeral=True
                 )
@@ -952,7 +972,7 @@ class TTS(commands.Cog):
 
             if matched_voice is None:
                 available = ', '.join(sorted(voices.keys()))
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Invalid voice **{voice}**\nAvailable: {available}',
                     ephemeral=True
                 )
@@ -970,7 +990,7 @@ class TTS(commands.Cog):
                     except:
                         owner_name = f"User {voice_owner}"
 
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f'Voice **{voice}** is exclusively claimed by {owner_name}.\n'
                         f'If you have a subscription, you can claim your own exclusive voice with `/tts claim-voice`',
                         ephemeral=True
@@ -988,20 +1008,20 @@ class TTS(commands.Cog):
             )
 
             if success:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Voice set to **{voice}** - {voices[voice]}',
                     ephemeral=True
                 )
                 logger.info(f'User {interaction.user} set voice to {voice}')
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     'Failed to save voice preference',
                     ephemeral=True
                 )
 
         except Exception as e:
             logger.error(f'Failed to set voice: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @voice_group.command(name="claim-voice", description="Claim an exclusive voice (requires subscription)")
     @app_commands.describe(voice="Voice ID to claim (e.g., M1, F2)")
@@ -1014,11 +1034,13 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Check if user has active subscription
             is_subscribed = await self.user_subscriptions.is_subscribed(interaction.user.id)
             if not is_subscribed:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "You need an active subscription to claim voices. Contact the server owner to grant you subscription access.",
                     ephemeral=True
                 )
@@ -1027,7 +1049,7 @@ class TTS(commands.Cog):
             # Get subscription info
             sub_info = await self.user_subscriptions.get_subscription(interaction.user.id)
             if not sub_info:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "Subscription not found. Contact the server owner.",
                     ephemeral=True
                 )
@@ -1037,7 +1059,7 @@ class TTS(commands.Cog):
             has_claim = await self.voice_claims.user_has_claimed_voice(interaction.user.id)
             if has_claim:
                 current_voice = await self.voice_claims.get_user_claimed_voice(interaction.user.id)
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"You already claimed voice **{current_voice}**. Release it first with `/tts claim-release`",
                     ephemeral=True
                 )
@@ -1045,7 +1067,7 @@ class TTS(commands.Cog):
 
             # Get available voices
             if not hasattr(self.tts_engine, 'AVAILABLE_VOICES'):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "Current TTS engine does not support voice selection",
                     ephemeral=True
                 )
@@ -1063,7 +1085,7 @@ class TTS(commands.Cog):
 
             if matched_voice is None:
                 available = ', '.join(sorted(voices.keys()))
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Invalid voice **{voice}**\nAvailable: {available}',
                     ephemeral=True
                 )
@@ -1074,7 +1096,7 @@ class TTS(commands.Cog):
             # Check if voice is in protected/public-only list
             protected_voices = ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']
             if voice in protected_voices:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Voice **{voice}** is a public voice and cannot be claimed. It must remain available to all users.',
                     ephemeral=True
                 )
@@ -1084,7 +1106,7 @@ class TTS(commands.Cog):
             is_claimed = await self.voice_claims.is_voice_claimed(voice)
             if is_claimed:
                 owner_id = await self.voice_claims.get_voice_owner(voice)
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f'Voice **{voice}** is already claimed by <@{owner_id}>',
                     ephemeral=True
                 )
@@ -1104,20 +1126,20 @@ class TTS(commands.Cog):
                     interaction.user.id,
                     voice_name=voice
                 )
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"✅ {message}\nVoice **{voice}** is now your exclusive voice for this subscription!",
                     ephemeral=True
                 )
                 logger.info(f'User {interaction.user} claimed voice {voice}')
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"❌ {message}",
                     ephemeral=True
                 )
 
         except Exception as e:
             logger.error(f'Failed to claim voice: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
     @voice_group.command(name="claim-release", description="Release your claimed exclusive voice")
     async def claim_release(self, interaction: discord.Interaction):
@@ -1129,11 +1151,13 @@ class TTS(commands.Cog):
         # Ensure database models are initialized
         self._ensure_db_models()
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Check if user has a claimed voice
             has_claim = await self.voice_claims.user_has_claimed_voice(interaction.user.id)
             if not has_claim:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "You do not have a claimed voice to release",
                     ephemeral=True
                 )
@@ -1148,20 +1172,20 @@ class TTS(commands.Cog):
                     interaction.user.id,
                     voice_name='M1'
                 )
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"✅ {message}\nYour voice preference has been reset to M1.",
                     ephemeral=True
                 )
                 logger.info(f'User {interaction.user} released voice {voice_id}')
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"❌ {message}",
                     ephemeral=True
                 )
 
         except Exception as e:
             logger.error(f'Failed to release voice: {e}')
-            await interaction.response.send_message(f'Error: {e}', ephemeral=True)
+            await interaction.followup.send(f'Error: {e}', ephemeral=True)
 
 
     @tts_group.command(name="check_perms", description="Check bot's voice channel permissions")
