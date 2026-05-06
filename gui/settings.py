@@ -44,6 +44,11 @@ DEFAULT_DATABASE_URL = "postgresql://USER:PASSWORD@HOST.proxy.rlwy.net:PORT/rail
 # Default log level when the user hasn't picked one yet.
 DEFAULT_LOG_LEVEL = "INFO"
 
+# Default TTS device — 'auto' lets supertonic pick CPU/CUDA based on what
+# torch sees. Override via the Settings tab to force one or the other.
+DEFAULT_TTS_DEVICE = "auto"
+TTS_DEVICE_CHOICES = ("auto", "cpu", "cuda")
+
 
 def _qsettings() -> QSettings:
     return QSettings(ORG_NAME, APP_NAME)

@@ -68,7 +68,14 @@ intents.members = True
 intents.voice_states = True
 intents.guilds = True
 
-bot = commands.Bot(command_prefix="/", intents=intents)
+_owner_id_raw = os.getenv("OWNER_ID")
+try:
+    _owner_id = int(_owner_id_raw) if _owner_id_raw else None
+except ValueError:
+    logger.warning(f"OWNER_ID={_owner_id_raw!r} is not a valid integer; ignoring")
+    _owner_id = None
+
+bot = commands.Bot(command_prefix="/", intents=intents, owner_id=_owner_id)
 
 
 @bot.event

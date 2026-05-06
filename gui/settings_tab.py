@@ -117,6 +117,65 @@ class SettingsTab(QWidget):
         db_btns.addStretch()
         form.addRow("", _wrap_layout(db_btns))
 
+        # Discord owner ID — gates admin-only commands. Without it set,
+        # admin commands fall back to checking for a role literally named
+        # "Admin". Numeric Discord user ID, e.g. 167123456789012345.
+        self._owner_edit = QLineEdit()
+        self._owner_edit.setPlaceholderText("Your Discord user ID (numeric, e.g. 167123456789012345)")
+        form.addRow("Owner ID:", self._owner_edit)
+
+        owner_help = QLabel(
+            "Your Discord user ID. In Discord: User Settings → Advanced → "
+            "enable Developer Mode, then right-click your name → Copy User ID."
+        )
+        owner_help.setWordWrap(True)
+        owner_help.setProperty("role", "secondary")
+        form.addRow("", owner_help)
+
+        # HuggingFace token — optional, used to avoid anonymous rate limits
+        # when supertonic downloads its ONNX model on first run.
+        self._hf_edit = QLineEdit()
+        self._hf_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._hf_edit.setPlaceholderText("hf_... (optional)")
+        form.addRow("HuggingFace Token:", self._hf_edit)
+
+        hf_btns = QHBoxLayout()
+        self._show_hf_btn = QPushButton("Show")
+        self._show_hf_btn.setCheckable(True)
+        self._show_hf_btn.setMaximumWidth(80)
+        self._show_hf_btn.toggled.connect(self._on_hf_visibility_toggled)
+        hf_btns.addWidget(self._show_hf_btn)
+        hf_btns.addStretch()
+        form.addRow("", _wrap_layout(hf_btns))
+
+        hf_help = QLabel(
+            'Optional — only needed if HuggingFace rate-limits the first-run '
+            'model download. Create one at '
+            '<a href="https://huggingface.co/settings/tokens">'
+            'huggingface.co/settings/tokens</a> (read-only is fine).'
+        )
+        hf_help.setWordWrap(True)
+        hf_help.setOpenExternalLinks(True)
+        hf_help.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        hf_help.setProperty("role", "secondary")
+        form.addRow("", hf_help)
+
+        # TTS device — auto/cpu/cuda. Lets a user with a CUDA-capable GPU
+        # flip on hardware acceleration without editing config/config.yaml.
+        self._device_combo = QComboBox()
+        for dev in gui_settings.TTS_DEVICE_CHOICES:
+            self._device_combo.addItem(dev, userData=dev)
+        form.addRow("TTS Device:", self._device_combo)
+
+        device_help = QLabel(
+            "<b>auto</b>: let Supertonic pick (recommended). "
+            "<b>cuda</b>: force NVIDIA GPU — much faster, requires a CUDA-capable card. "
+            "<b>cpu</b>: force CPU — works anywhere, slower."
+        )
+        device_help.setWordWrap(True)
+        device_help.setProperty("role", "secondary")
+        form.addRow("", device_help)
+
         self._log_combo = QComboBox()
         for lvl in _LOG_LEVELS:
             self._log_combo.addItem(lvl, userData=lvl)
@@ -160,6 +219,13 @@ class SettingsTab(QWidget):
         # the bundled default so users don't need to know the Railway URL.
         # They can edit it but typically just leave it.
         self._db_edit.setText(env.get("DATABASE_URL") or gui_settings.DEFAULT_DATABASE_URL)
+        self._owner_edit.setText(env.get("OWNER_ID", ""))
+        self._hf_edit.setText(env.get("HF_TOKEN", ""))
+
+        device = (env.get("TTS_DEVICE") or gui_settings.DEFAULT_TTS_DEVICE).lower()
+        if device not in gui_settings.TTS_DEVICE_CHOICES:
+            device = gui_settings.DEFAULT_TTS_DEVICE
+        self._device_combo.setCurrentIndex(max(0, self._device_combo.findData(device)))
 
         log_level = (env.get("LOG_LEVEL") or gui_settings.DEFAULT_LOG_LEVEL).upper()
         idx = max(
@@ -184,6 +250,9 @@ class SettingsTab(QWidget):
     def _save(self):
         token = self._token_edit.text().strip()
         db_url = self._db_edit.text().strip()
+        owner_id = self._owner_edit.text().strip()
+        hf_token = self._hf_edit.text().strip()
+        tts_device = self._device_combo.currentData() or gui_settings.DEFAULT_TTS_DEVICE
         log_level = self._log_combo.currentData() or "INFO"
 
         if not token:
@@ -195,21 +264,41 @@ class SettingsTab(QWidget):
             )
             return
 
-        values = {
+        if owner_id and not owner_id.isdigit():
+            QMessageBox.warning(
+                self,
+                "Owner ID must be numeric",
+                "Discord user IDs are 17–19 digit numbers (e.g. 167123456789012345). "
+                "Enable Developer Mode in Discord and right-click your name to copy it.",
+            )
+            return
+
+        # Only persist OWNER_ID / HF_TOKEN when the user actually filled
+        # them in — empty entries shouldn't clobber any value already in
+        # .env via direct edit.
+        values: dict[str, str] = {
             "DISCORD_TOKEN": token,
             "DATABASE_URL": db_url,
             "LOG_LEVEL": log_level,
+            "TTS_DEVICE": tts_device,
         }
+        if owner_id:
+            values["OWNER_ID"] = owner_id
+        if hf_token:
+            values["HF_TOKEN"] = hf_token
+
         try:
             gui_settings.write_env(values)
             # Also push into the live process env so that if the user clicks
-            # Connect after saving, main.main() picks up the new token.
+            # Connect after saving, main.main() picks up the new values.
             gui_settings.apply_env_to_process(values)
         except OSError as e:
             QMessageBox.critical(self, "Save failed", f"Could not write .env file: {e}")
             return
 
-        self._status_label.setText("Saved. Restart Super TTS to apply token changes.")
+        self._status_label.setText(
+            "Saved. Restart Super TTS to apply token, owner ID, and device changes."
+        )
 
     # ── Slots ────────────────────────────────────────────────────────────
 
@@ -224,6 +313,12 @@ class SettingsTab(QWidget):
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         )
         self._show_db_btn.setText("Hide" if checked else "Show")
+
+    def _on_hf_visibility_toggled(self, checked: bool):
+        self._hf_edit.setEchoMode(
+            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        )
+        self._show_hf_btn.setText("Hide" if checked else "Show")
 
     def _on_theme_picked(self):
         theme = self._theme_combo.currentData()
