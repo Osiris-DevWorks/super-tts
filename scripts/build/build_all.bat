@@ -46,10 +46,19 @@ if exist "dist\Super-TTS-v%APPVER%\" (
 echo.
 
 echo Step 5: Creating installer (requires Inno Setup)...
+rem cmd's chained `if not defined X if exist Y` pattern misparses when one
+rem of the candidate paths contains parens like "Program Files (x86)" — the
+rem `(x86)` collides with cmd's parenthesized-block lookahead and produces
+rem a "\Inno was unexpected at this time." error before the build even
+rem runs ISCC. A FOR loop sidesteps the issue: each %%P is one token and
+rem the parens inside don't reach the surrounding parser.
 set "ISCC_EXE="
-if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" set "ISCC_EXE=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if not defined ISCC_EXE if exist "C:\Program Files\Inno Setup 6\ISCC.exe" set "ISCC_EXE=C:\Program Files\Inno Setup 6\ISCC.exe"
-if not defined ISCC_EXE if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set "ISCC_EXE=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+for %%P in (
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+    "C:\Program Files\Inno Setup 6\ISCC.exe"
+    "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
+) do if not defined ISCC_EXE if exist %%P set "ISCC_EXE=%%~P"
+
 if defined ISCC_EXE (
     echo   Using "%ISCC_EXE%"
     "%ISCC_EXE%" installer.iss
@@ -60,13 +69,9 @@ if defined ISCC_EXE (
         echo   - Installer created successfully!
     )
 ) else (
-    echo WARNING: Inno Setup not found in any of:
-    echo     C:\Program Files (x86)\Inno Setup 6\ISCC.exe
-    echo     C:\Program Files\Inno Setup 6\ISCC.exe
-    echo     %%LOCALAPPDATA%%\Programs\Inno Setup 6\ISCC.exe
-    echo Skipping installer creation
-    echo Install Inno Setup from: https://jrsoftware.org/isdl.php
-    echo Or create the installer manually by opening installer.iss
+    echo WARNING: Inno Setup not found at any standard location.
+    echo Install from https://jrsoftware.org/isdl.php
+    echo Or compile manually: ISCC.exe installer.iss
 )
 echo.
 
