@@ -159,8 +159,6 @@ the next step.
      (read-only access is fine).
    - **TTS Device** — leave on `auto` unless you have a reason to force CPU
      or CUDA.
-   - **Log Level** — `INFO` is the right default. `DEBUG` is verbose; use it
-     when troubleshooting.
 4. Click **Save**. The status line at the bottom confirms it wrote
    `%APPDATA%\Osiris DevWorks\Super TTS\.env`.
 5. Switch to the **Status** tab and click **Connect**. The dot goes yellow

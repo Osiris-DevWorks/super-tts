@@ -6,10 +6,9 @@ The thread sets `SUPER_TTS_GUI_MODE=1` before importing `main` so the
 module-level token-guard skips its `sys.exit(1)` — the GUI handles missing
 tokens via the Settings tab instead.
 
-Limitation (intentional, v1): a stopped bot cannot be restarted in the
-same process — discord.py's `Bot` instance can only be `start()`ed once.
-The Status tab's "Disconnect" button works once, then the user must
-relaunch the app to reconnect. Documented in the Status tab UI.
+Reconnect: each Connect cycle spawns a fresh BotRunner. main.main() builds
+a new discord.py Bot per call (it's no longer a module-level singleton),
+so Disconnect → Connect inside the same process works.
 """
 from __future__ import annotations
 
@@ -53,17 +52,23 @@ class BotRunner(QThread):
         try:
             import main as bot_module
 
-            # Hook the bot's on_ready so the GUI can light up the Status tab
-            # the moment the gateway handshake succeeds. We install an extra
-            # listener instead of overriding @bot.event so the existing
-            # on_ready handler in main.py still runs.
-            async def _on_ready_for_gui():
-                user = bot_module.bot.user
-                guild_count = len(bot_module.bot.guilds)
-                name = str(user) if user else "Unknown"
+            # Register a single observer with main.py — the bot is no longer
+            # a module-level attribute (it's built fresh inside main() so
+            # reconnect works), so we can't add_listener() against it from
+            # out here. main.py runs the observer at the tail of its own
+            # on_ready handler.
+            async def _on_ready_for_gui(bot):
+                # main.py fires this once at on_connect (bot.user is None,
+                # bot.guilds is empty) and again at on_ready (both populated).
+                # Emit an empty name on the early call so the Status tab
+                # can show generic "Gateway connected" text and update with
+                # the real user/guild info on the second emit.
+                user = bot.user
+                guild_count = len(bot.guilds) if bot.guilds else 0
+                name = str(user) if user else ""
                 self.ready.emit(name, guild_count)
 
-            bot_module.bot.add_listener(_on_ready_for_gui, "on_ready")
+            bot_module.set_ready_observer(_on_ready_for_gui)
 
             self.starting.emit()
             logger.info("BotRunner: starting bot via main.main()")
@@ -98,8 +103,11 @@ class BotRunner(QThread):
             import main as bot_module
 
             async def _shutdown():
+                bot = bot_module.get_current_bot()
+                if bot is None:
+                    return
                 try:
-                    await bot_module.bot.close()
+                    await bot.close()
                 except Exception:
                     pass
 

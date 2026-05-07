@@ -76,6 +76,7 @@ exe_name = f"Super-TTS-v{current_version}"
 config_dir = os.path.join(root_dir, "config")
 migrations_dir = os.path.join(root_dir, "db", "migrations")
 voices_dir = os.path.join(root_dir, "voices")
+assets_dir = os.path.join(root_dir, "assets")
 icon_path = os.path.join(root_dir, "assets", "super-tts.ico")
 
 args = [
@@ -100,6 +101,7 @@ args = [
     "--add-data", f"{config_dir}{os.pathsep}config",
     "--add-data", f"{migrations_dir}{os.pathsep}db{os.sep}migrations",
     "--add-data", f"{voices_dir}{os.pathsep}voices",
+    "--add-data", f"{assets_dir}{os.pathsep}assets",
     "--add-data", f"{version_file}{os.pathsep}.",
 
     # Hidden imports — modules PyInstaller's static graph misses because
@@ -131,9 +133,11 @@ args = [
     "--hidden-import=gui.main_window",
     "--hidden-import=gui.status_tab",
     "--hidden-import=gui.settings_tab",
-    "--hidden-import=gui.log_tab",
+    "--hidden-import=gui.log_view",
     "--hidden-import=gui.about_tab",
+    "--hidden-import=gui.help_tab",
     "--hidden-import=gui.bot_runner",
+    "--hidden-import=gui.footer",
     "--hidden-import=gui.theme",
     "--hidden-import=gui.settings",
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -30,17 +31,77 @@ from gui import theme as gui_theme
 logger = logging.getLogger(__name__)
 
 
-_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 _THEME_CHOICES = (
     (gui_theme.THEME_ODW, "Osiris DevWorks (default)"),
-    (gui_theme.THEME_SCLE, "SC Localization Editor (navy + cyan)"),
+    (gui_theme.THEME_SCLE, "Cyan Citizen"),
     (gui_theme.THEME_DARK, "Dark"),
     (gui_theme.THEME_LIGHT, "Light"),
 )
 
 
+# Per-field help strings shown in "?" badge tooltips. Tooltips render rich
+# text (HTML) and auto-wrap; URLs aren't clickable inside a tooltip but the
+# user can copy them. Keep these short — the Help tab is the long-form
+# walkthrough.
+_TOKEN_HELP = (
+    "<p>Bot token from the Discord Developer Portal "
+    "(<b>discord.com/developers/applications</b>).</p>"
+    "<p>Under the <b>Bot</b> tab, enable <b>Message Content Intent</b>, "
+    "<b>Server Members Intent</b>, and <b>Voice States Intent</b> before "
+    "copying the token. See the <b>Help</b> tab for the full walkthrough.</p>"
+)
+_DB_URL_HELP = (
+    "<p>PostgreSQL connection URL the bot uses for state (monitored "
+    "channels, user preferences, voice claims).</p>"
+    "<p>Pre-filled with the bundled default — leave it as is unless "
+    "you've been told otherwise.</p>"
+)
+_OWNER_HELP = (
+    "<p>Your Discord user ID. Required for admin slash commands "
+    "(<code>/tts admin-voice ...</code>) to recognize you as the bot's owner.</p>"
+    "<p>To copy it: User Settings → Advanced → enable Developer Mode, "
+    "then right-click your name in any channel → Copy User ID.</p>"
+)
+_HF_HELP = (
+    "<p>Optional. Only needed if HuggingFace rate-limits the first-run "
+    "Supertonic model download (~1–2 GB).</p>"
+    "<p>Get a read-only token at <b>huggingface.co/settings/tokens</b>.</p>"
+)
+_DEVICE_HELP = (
+    "<p><b>auto</b>: let Supertonic pick — recommended.</p>"
+    "<p><b>cuda</b>: force NVIDIA GPU — much faster, requires a "
+    "CUDA-capable card and onnxruntime-gpu installed.</p>"
+    "<p><b>cpu</b>: force CPU — works anywhere, slower.</p>"
+)
+
+
+def _help_badge(tooltip_html: str) -> QLabel:
+    """Small "?" indicator that surfaces helper text on hover. Uses a
+    semi-transparent gray background so it reads on every theme without
+    needing a per-theme stylesheet refresh."""
+    badge = QLabel("?")
+    badge.setToolTip(tooltip_html)
+    badge.setCursor(QCursor(Qt.CursorShape.WhatsThisCursor))
+    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    badge.setFixedSize(18, 18)
+    badge.setStyleSheet(
+        "QLabel {"
+        " border-radius: 9px;"
+        " background-color: rgba(127, 127, 127, 0.25);"
+        " color: palette(window-text);"
+        " font-weight: bold;"
+        " font-size: 11px;"
+        "}"
+        "QLabel:hover { background-color: rgba(127, 127, 127, 0.45); }"
+    )
+    return badge
+
+
 class SettingsTab(QWidget):
-    """Edit Discord token, DB URL, log level, and UI theme."""
+    """Edit Discord token, DB URL, owner ID, HF token, TTS device, and theme.
+
+    Log level lives on the Status tab now — it sits next to the live log
+    feed and applies without restarting."""
 
     # Emitted with the new theme key when the user picks a theme. The main
     # window listens and calls gui_theme.apply_theme() so swap is live.
@@ -56,131 +117,64 @@ class SettingsTab(QWidget):
         outer.setContentsMargins(24, 24, 24, 24)
         outer.setSpacing(12)
 
-        intro = QLabel(
-            "Configuration is stored at "
-            "<code>%APPDATA%\\Osiris DevWorks\\Super TTS\\.env</code>. "
-            "Changes apply on the next launch — for the token in particular, "
-            "save here and then restart Super TTS."
-        )
-        intro.setWordWrap(True)
-        intro.setProperty("role", "secondary")
-        outer.addWidget(intro)
-
-        # First-run helper — points at the Discord Developer Portal for the
-        # most common "where do I get a token?" question.
-        token_help = QLabel(
-            'Need a token? Create a Discord application at '
-            '<a href="https://discord.com/developers/applications">'
-            'discord.com/developers/applications</a>, enable the '
-            '<b>Message Content</b>, <b>Server Members</b>, and '
-            '<b>Voice States</b> intents under the Bot tab, then copy the token.'
-        )
-        token_help.setWordWrap(True)
-        token_help.setOpenExternalLinks(True)
-        token_help.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextBrowserInteraction
-        )
-        outer.addWidget(token_help)
-
         form = QFormLayout()
         form.setSpacing(10)
         form.setLabelAlignment(form.labelAlignment().__class__(0))  # left-align labels
 
+        # Each row packs [field][?][Show] into one widget so the form stays
+        # compact. Inline helper labels are gone — their content lives on
+        # the "?" badges as tooltips, and the long-form walkthrough lives
+        # in the Help tab.
+
+        # ── Discord Token ─────────────────────────────────────────────────
         self._token_edit = QLineEdit()
         self._token_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._token_edit.setPlaceholderText("Bot token from the Discord Developer Portal")
         self._token_edit.setMinimumWidth(360)
-        form.addRow("Discord Token:", self._token_edit)
+        self._show_token_btn = self._make_show_button(self._on_token_visibility_toggled)
+        form.addRow(
+            "Discord Token:",
+            _row(self._token_edit, _help_badge(_TOKEN_HELP), self._show_token_btn),
+        )
 
-        # "Show" toggle for the token — convenient for users sanity-checking
-        # what they pasted. Defaults to masked.
-        token_btns = QHBoxLayout()
-        self._show_token_btn = QPushButton("Show")
-        self._show_token_btn.setCheckable(True)
-        self._show_token_btn.setMaximumWidth(80)
-        self._show_token_btn.toggled.connect(self._on_token_visibility_toggled)
-        token_btns.addWidget(self._show_token_btn)
-        token_btns.addStretch()
-        form.addRow("", _wrap_layout(token_btns))
-
+        # ── Database URL ──────────────────────────────────────────────────
         self._db_edit = QLineEdit()
         self._db_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._db_edit.setPlaceholderText("postgresql://user:pass@host.proxy.rlwy.net:port/railway")
-        form.addRow("Database URL:", self._db_edit)
+        self._show_db_btn = self._make_show_button(self._on_db_visibility_toggled)
+        form.addRow(
+            "Database URL:",
+            _row(self._db_edit, _help_badge(_DB_URL_HELP), self._show_db_btn),
+        )
 
-        db_btns = QHBoxLayout()
-        self._show_db_btn = QPushButton("Show")
-        self._show_db_btn.setCheckable(True)
-        self._show_db_btn.setMaximumWidth(80)
-        self._show_db_btn.toggled.connect(self._on_db_visibility_toggled)
-        db_btns.addWidget(self._show_db_btn)
-        db_btns.addStretch()
-        form.addRow("", _wrap_layout(db_btns))
-
-        # Discord owner ID — gates admin-only commands. Without it set,
-        # admin commands fall back to checking for a role literally named
-        # "Admin". Numeric Discord user ID, e.g. 167123456789012345.
+        # ── Owner ID ──────────────────────────────────────────────────────
         self._owner_edit = QLineEdit()
         self._owner_edit.setPlaceholderText("Your Discord user ID (numeric, e.g. 167123456789012345)")
-        form.addRow("Owner ID:", self._owner_edit)
-
-        owner_help = QLabel(
-            "Your Discord user ID. In Discord: User Settings → Advanced → "
-            "enable Developer Mode, then right-click your name → Copy User ID."
+        form.addRow(
+            "Owner ID:",
+            _row(self._owner_edit, _help_badge(_OWNER_HELP)),
         )
-        owner_help.setWordWrap(True)
-        owner_help.setProperty("role", "secondary")
-        form.addRow("", owner_help)
 
-        # HuggingFace token — optional, used to avoid anonymous rate limits
-        # when supertonic downloads its ONNX model on first run.
+        # ── HuggingFace Token ─────────────────────────────────────────────
         self._hf_edit = QLineEdit()
         self._hf_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._hf_edit.setPlaceholderText("hf_... (optional)")
-        form.addRow("HuggingFace Token:", self._hf_edit)
-
-        hf_btns = QHBoxLayout()
-        self._show_hf_btn = QPushButton("Show")
-        self._show_hf_btn.setCheckable(True)
-        self._show_hf_btn.setMaximumWidth(80)
-        self._show_hf_btn.toggled.connect(self._on_hf_visibility_toggled)
-        hf_btns.addWidget(self._show_hf_btn)
-        hf_btns.addStretch()
-        form.addRow("", _wrap_layout(hf_btns))
-
-        hf_help = QLabel(
-            'Optional — only needed if HuggingFace rate-limits the first-run '
-            'model download. Create one at '
-            '<a href="https://huggingface.co/settings/tokens">'
-            'huggingface.co/settings/tokens</a> (read-only is fine).'
+        self._show_hf_btn = self._make_show_button(self._on_hf_visibility_toggled)
+        form.addRow(
+            "HuggingFace Token:",
+            _row(self._hf_edit, _help_badge(_HF_HELP), self._show_hf_btn),
         )
-        hf_help.setWordWrap(True)
-        hf_help.setOpenExternalLinks(True)
-        hf_help.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
-        hf_help.setProperty("role", "secondary")
-        form.addRow("", hf_help)
 
-        # TTS device — auto/cpu/cuda. Lets a user with a CUDA-capable GPU
-        # flip on hardware acceleration without editing config/config.yaml.
+        # ── TTS Device ────────────────────────────────────────────────────
         self._device_combo = QComboBox()
         for dev in gui_settings.TTS_DEVICE_CHOICES:
             self._device_combo.addItem(dev, userData=dev)
-        form.addRow("TTS Device:", self._device_combo)
-
-        device_help = QLabel(
-            "<b>auto</b>: let Supertonic pick (recommended). "
-            "<b>cuda</b>: force NVIDIA GPU — much faster, requires a CUDA-capable card. "
-            "<b>cpu</b>: force CPU — works anywhere, slower."
+        form.addRow(
+            "TTS Device:",
+            _row(self._device_combo, _help_badge(_DEVICE_HELP)),
         )
-        device_help.setWordWrap(True)
-        device_help.setProperty("role", "secondary")
-        form.addRow("", device_help)
 
-        self._log_combo = QComboBox()
-        for lvl in _LOG_LEVELS:
-            self._log_combo.addItem(lvl, userData=lvl)
-        form.addRow("Log Level:", self._log_combo)
-
+        # ── Theme ─────────────────────────────────────────────────────────
         self._theme_combo = QComboBox()
         for key, label in _THEME_CHOICES:
             self._theme_combo.addItem(label, userData=key)
@@ -227,15 +221,6 @@ class SettingsTab(QWidget):
             device = gui_settings.DEFAULT_TTS_DEVICE
         self._device_combo.setCurrentIndex(max(0, self._device_combo.findData(device)))
 
-        log_level = (env.get("LOG_LEVEL") or gui_settings.DEFAULT_LOG_LEVEL).upper()
-        idx = max(
-            0,
-            self._log_combo.findData(
-                log_level if log_level in _LOG_LEVELS else gui_settings.DEFAULT_LOG_LEVEL
-            ),
-        )
-        self._log_combo.setCurrentIndex(idx)
-
         # Theme comes from QSettings, not .env — so this stays in sync even
         # if the user hand-edits .env without touching the registry.
         current_theme = gui_settings.get_theme()
@@ -245,7 +230,8 @@ class SettingsTab(QWidget):
         self._theme_combo.setCurrentIndex(idx)
         self._theme_combo.blockSignals(False)
 
-        self._status_label.setText(f"Loaded from {gui_settings.env_file_path()}.")
+        # Clear any prior save/load status so the panel starts clean.
+        self._status_label.setText("")
 
     def _save(self):
         token = self._token_edit.text().strip()
@@ -253,7 +239,6 @@ class SettingsTab(QWidget):
         owner_id = self._owner_edit.text().strip()
         hf_token = self._hf_edit.text().strip()
         tts_device = self._device_combo.currentData() or gui_settings.DEFAULT_TTS_DEVICE
-        log_level = self._log_combo.currentData() or "INFO"
 
         if not token:
             QMessageBox.warning(
@@ -275,13 +260,16 @@ class SettingsTab(QWidget):
 
         # Only persist OWNER_ID / HF_TOKEN when the user actually filled
         # them in — empty entries shouldn't clobber any value already in
-        # .env via direct edit.
+        # .env via direct edit. LOG_LEVEL is owned by the Status tab now,
+        # so we preserve whatever was there rather than rewriting it.
+        existing = gui_settings.read_env()
         values: dict[str, str] = {
             "DISCORD_TOKEN": token,
             "DATABASE_URL": db_url,
-            "LOG_LEVEL": log_level,
             "TTS_DEVICE": tts_device,
         }
+        if existing.get("LOG_LEVEL"):
+            values["LOG_LEVEL"] = existing["LOG_LEVEL"]
         if owner_id:
             values["OWNER_ID"] = owner_id
         if hf_token:
@@ -326,9 +314,29 @@ class SettingsTab(QWidget):
             gui_settings.set_theme(theme)
             self.theme_changed.emit(theme)
 
+    # ── Small factories ──────────────────────────────────────────────────
 
-def _wrap_layout(layout) -> QWidget:
-    """QFormLayout doesn't take a layout in column 1 directly — wrap it."""
-    w = QWidget()
-    w.setLayout(layout)
-    return w
+    def _make_show_button(self, slot) -> QPushButton:
+        """Standard checkable Show/Hide button used by every masked field."""
+        btn = QPushButton("Show")
+        btn.setCheckable(True)
+        btn.setMaximumWidth(80)
+        btn.toggled.connect(slot)
+        return btn
+
+
+def _row(*widgets: QWidget) -> QWidget:
+    """Pack widgets horizontally into a single column-1 widget for QFormLayout.
+
+    First widget stretches (it's the input), badges and buttons sit at their
+    natural width on the right. QFormLayout's column 1 only takes a QWidget,
+    so the QHBoxLayout has to be wrapped."""
+    box = QHBoxLayout()
+    box.setContentsMargins(0, 0, 0, 0)
+    box.setSpacing(8)
+    for i, w in enumerate(widgets):
+        # First widget = the input; give it stretch=1 so it absorbs free space.
+        box.addWidget(w, 1 if i == 0 else 0)
+    container = QWidget()
+    container.setLayout(box)
+    return container

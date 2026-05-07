@@ -152,4 +152,17 @@ config.local.yaml
 
 # TTS Model cache
 ~/.local/share/TTS/
-/assets/
+
+# Per-user voice / model artifacts under assets/ should not be committed;
+# the named branding assets and bundled display font that the GUI ships
+# with are explicitly re-included below.
+/assets/*
+!/assets/super-tts.png
+!/assets/super-tts.ico
+!/assets/osiris-devworks.png
+!/assets/osiris-eye-glow.png
+!/assets/discord.png
+!/assets/paypal.png
+!/assets/venmo.png
+!/assets/fonts/
+!/assets/fonts/HyperspaceRace-ExpandedBold.otf

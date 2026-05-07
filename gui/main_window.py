@@ -7,22 +7,21 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QIcon, QCloseEvent
+from PyQt6.QtGui import QFont, QIcon, QCloseEvent, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QStatusBar,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from gui import settings as gui_settings
 from gui import theme as gui_theme
 from gui.about_tab import AboutTab
-from gui.log_tab import LogTab
+from gui.footer import Footer
+from gui.help_tab import HelpTab
 from gui.settings_tab import SettingsTab
 from gui.status_tab import StatusTab
 
@@ -38,7 +37,12 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Super TTS")
-        self.resize(900, 620)
+        # Settings tab packs Token + DB URL + Owner ID + HF Token + TTS
+        # Device + Theme plus inline help text — at <760px the Show
+        # buttons and helper labels get scrunched. Lock the floor at 760
+        # and open a hair taller so users land on a comfortable layout.
+        self.setMinimumHeight(760)
+        self.resize(900, 780)
 
         # Optional icon — if assets/super-tts.ico is bundled, use it
         icon_path = _resource_path("assets/super-tts.ico")
@@ -72,44 +76,100 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget()
         self._status_tab = StatusTab()
         self._settings_tab = SettingsTab()
-        self._log_tab = LogTab()
+        self._help_tab = HelpTab()
         self._about_tab = AboutTab()
 
         self._tabs.addTab(self._status_tab, "Status")
         self._tabs.addTab(self._settings_tab, "Settings")
-        self._tabs.addTab(self._log_tab, "Logs")
+        self._tabs.addTab(self._help_tab, "Help")
         self._tabs.addTab(self._about_tab, "About")
 
         self._settings_tab.theme_changed.connect(self._on_theme_changed)
 
         outer.addWidget(self._tabs, 1)
-        self.setCentralWidget(central)
 
-        sb = QStatusBar()
-        sb.showMessage(f"Ready — config: {gui_settings.env_file_path()}")
-        self.setStatusBar(sb)
+        # Branded footer (Osiris logo + Discord on the left, donation cluster
+        # on the right). The Osiris logo's Eye of Horus glyph pulses while
+        # the bot is connected — Status tab fires bot_ready / bot_idle for
+        # the footer to listen on.
+        self._footer = Footer()
+        outer.addWidget(self._footer)
+        self._status_tab.bot_ready.connect(self._footer.start_pulse)
+        self._status_tab.bot_idle.connect(self._footer.stop_pulse)
+
+        self.setCentralWidget(central)
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
         row.setSpacing(12)
 
-        self._title_label = QLabel("Super TTS")
-        title_font = QFont()
-        title_font.setPointSize(18)
-        title_font.setBold(True)
+        # Title + tagline stack vertically on the left (smart-citizen style:
+        # bold branded title, smaller letter-spaced tagline beneath).
+        title_stack = QVBoxLayout()
+        title_stack.setSpacing(0)
+        title_stack.setContentsMargins(0, 0, 0, 0)
+
+        self._title_label = QLabel("SUPER TTS")
+        title_font = QFont(gui_theme.BRAND_FONT_FAMILY)
+        title_font.setPointSize(22)
         self._title_label.setFont(title_font)
         self._title_label.setStyleSheet(f"color: {gui_theme.get_title_color()};")
-        row.addWidget(self._title_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        title_stack.addWidget(self._title_label)
 
-        self._tagline_label = QLabel("· Discord TTS bot · Osiris DevWorks")
-        tagline_font = QFont()
-        tagline_font.setPointSize(10)
-        self._tagline_label.setFont(tagline_font)
-        self._tagline_label.setStyleSheet(f"color: {gui_theme.get_tagline_color()};")
-        row.addWidget(self._tagline_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._tagline_label = QLabel("YOUR VOICE ON DISCORD")
+        self._tagline_label.setStyleSheet(self._tagline_qss())
+        title_stack.addWidget(self._tagline_label)
 
+        row.addLayout(title_stack)
         row.addStretch()
+
+        # Logo in the top-right corner. Drawn inside a theme-colored
+        # rounded border so it reads as a UI element rather than a stray
+        # graphic. Border re-renders on theme swap (see _on_theme_changed).
+        self._logo_label = self._build_logo()
+        if self._logo_label is not None:
+            row.addWidget(self._logo_label, 0, Qt.AlignmentFlag.AlignVCenter)
+
         return row
+
+    def _build_logo(self) -> QLabel | None:
+        """Load assets/super-tts.png, scale it for the header, wrap it in a
+        rounded border. Returns None if the asset is missing — header just
+        shows title + tagline in that case."""
+        path = _resource_path("assets/super-tts.png")
+        if not path.exists():
+            return None
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            return None
+        # Logo target height. The header text side is ~36px; oversize the
+        # logo so the framed mark anchors the top of the window.
+        if pixmap.height() > 72:
+            pixmap = pixmap.scaledToHeight(
+                72, Qt.TransformationMode.SmoothTransformation
+            )
+        label = QLabel()
+        label.setPixmap(pixmap)
+        label.setStyleSheet(self._logo_qss())
+        return label
+
+    def _logo_qss(self) -> str:
+        color = gui_theme.get_title_color()
+        return (
+            "QLabel {"
+            f" border: 2px solid {color};"
+            " border-radius: 8px;"
+            " padding: 4px;"
+            " background: transparent;"
+            "}"
+        )
+
+    def _tagline_qss(self) -> str:
+        return (
+            "font-size: 11px; "
+            "letter-spacing: 2px; "
+            f"color: {gui_theme.get_tagline_color()};"
+        )
 
     # ── Slots ────────────────────────────────────────────────────────────
 
@@ -119,7 +179,9 @@ class MainWindow(QMainWindow):
             gui_theme.apply_theme(app, theme)
         # Re-render any theme-dependent ad-hoc styles
         self._title_label.setStyleSheet(f"color: {gui_theme.get_title_color()};")
-        self._tagline_label.setStyleSheet(f"color: {gui_theme.get_tagline_color()};")
+        self._tagline_label.setStyleSheet(self._tagline_qss())
+        if self._logo_label is not None:
+            self._logo_label.setStyleSheet(self._logo_qss())
         self._status_tab.on_theme_changed()
         self._about_tab.on_theme_changed()
 
@@ -127,12 +189,10 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent):  # type: ignore[override]
         logger.info("MainWindow.closeEvent: shutting down")
+        # StatusTab.shutdown() also detaches the embedded LogView's logging
+        # handler — no separate cleanup call needed since the merge.
         try:
             self._status_tab.shutdown()
         except Exception as e:
             logger.warning(f"shutdown error: {e}")
-        try:
-            self._log_tab.remove_handler()
-        except Exception:
-            pass
         super().closeEvent(event)
