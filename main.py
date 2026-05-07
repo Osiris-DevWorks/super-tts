@@ -13,8 +13,17 @@ from dotenv import load_dotenv
 import discord
 from discord.ext import commands
 
-# Load environment variables
-load_dotenv()
+# Load environment variables. When installed via the Windows installer, the
+# user's token + DB URL live at %APPDATA%\Osiris DevWorks\Super TTS\.env. In
+# every other environment (dev, Docker, Railway), fall back to the original
+# behavior: load_dotenv() searches CWD for .env, and Railway/Docker just
+# inject env vars directly so .env absence is fine.
+_appdata = os.environ.get("APPDATA")
+_appdata_env = Path(_appdata) / "Osiris DevWorks" / "Super TTS" / ".env" if _appdata else None
+if _appdata_env and _appdata_env.is_file():
+    load_dotenv(_appdata_env)
+else:
+    load_dotenv()
 
 # Import database modules
 from db import DB, execute_sql_files
@@ -37,8 +46,19 @@ db = DB()
 
 # Get Discord token
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-if not DISCORD_TOKEN:
-    logger.error("DISCORD_TOKEN environment variable not set.")
+# When the GUI imports this module it sets SUPER_TTS_GUI_MODE=1; in that case
+# we skip the import-time exit and let the GUI handle a missing token via its
+# Settings tab. Console/Docker/Railway runs (no env var) keep the original
+# fail-fast behavior unchanged.
+if not DISCORD_TOKEN and not os.environ.get("SUPER_TTS_GUI_MODE"):
+    logger.error(
+        "DISCORD_TOKEN environment variable not set. "
+        "If you installed via the installer, edit "
+        "%APPDATA%\\Osiris DevWorks\\Super TTS\\.env and set DISCORD_TOKEN, "
+        "then re-launch."
+    )
+    if getattr(sys, "frozen", False):
+        input("Press Enter to exit...")
     sys.exit(1)
 
 # Setup bot
@@ -48,7 +68,14 @@ intents.members = True
 intents.voice_states = True
 intents.guilds = True
 
-bot = commands.Bot(command_prefix="/", intents=intents)
+_owner_id_raw = os.getenv("OWNER_ID")
+try:
+    _owner_id = int(_owner_id_raw) if _owner_id_raw else None
+except ValueError:
+    logger.warning(f"OWNER_ID={_owner_id_raw!r} is not a valid integer; ignoring")
+    _owner_id = None
+
+bot = commands.Bot(command_prefix="/", intents=intents, owner_id=_owner_id)
 
 
 @bot.event
@@ -103,7 +130,10 @@ async def main():
 
         async with bot:
             await load_extensions()
-            await bot.start(DISCORD_TOKEN)
+            # Re-read DISCORD_TOKEN at start time so the GUI can set the env
+            # var after the user enters their token in Settings, without us
+            # having captured the (then-absent) value at import time.
+            await bot.start(os.getenv("DISCORD_TOKEN") or DISCORD_TOKEN)
     finally:
         # Ensure database is closed
         await db.close()

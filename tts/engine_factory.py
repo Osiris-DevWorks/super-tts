@@ -4,6 +4,7 @@ Factory for creating Supertonic TTS engine instances
 """
 
 import logging
+import os
 from typing import Optional
 
 from .base_engine import BaseTTSEngine
@@ -41,8 +42,10 @@ class TTSEngineFactory:
             if config is None:
                 config = {}
 
-            # Get device setting (with fallback to auto)
-            device = config.get('device', 'auto')
+            # Device: env var (set by GUI Settings tab) wins over config.yaml.
+            # Lets a user with a CUDA-capable box flip to GPU without editing
+            # the bundled config file.
+            device = os.getenv('TTS_DEVICE') or config.get('device', 'auto')
 
             # Get model-specific config if it exists (ensure it's always a dict)
             model_config = config.get('model_config', {})

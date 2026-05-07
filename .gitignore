@@ -8,7 +8,10 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+# Anchored to repo root so we don't ignore scripts/build/ (the PyInstaller
+# build script lives there). The unanchored "build/" pattern was matching
+# both the root-level PyInstaller output AND our scripts/build/ directory.
+/build/
 develop-eggs/
 dist/
 downloads/
