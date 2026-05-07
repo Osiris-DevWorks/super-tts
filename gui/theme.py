@@ -11,12 +11,44 @@ import logging
 import sys
 from pathlib import Path
 
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QColor, QFontDatabase, QPalette
 from PyQt6.QtWidgets import QApplication, QProxyStyle, QStyle
 
 from gui import settings as gui_settings
 
 logger = logging.getLogger(__name__)
+
+
+# Branded display font used on the main window title + tagline. Loaded from
+# assets/fonts/ at app startup via load_application_fonts(). Family name is
+# what Qt reports after registering the OTF — Fontspring's demo build ships
+# with this prefixed family string and we match it verbatim.
+BRAND_FONT_FAMILY = "FONTSPRING DEMO - Hyperspace Race Expanded"
+_BRAND_FONT_FILE = "HyperspaceRace-ExpandedBold.otf"
+
+
+def _assets_fonts_dir() -> Path:
+    """Resolve the assets/fonts directory for both dev and PyInstaller builds."""
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent.parent
+    return base / "assets" / "fonts"
+
+
+def load_application_fonts() -> None:
+    """Register bundled display fonts with Qt. Call once at startup after
+    QApplication is constructed and before any widgets use the font."""
+    font_path = _assets_fonts_dir() / _BRAND_FONT_FILE
+    if not font_path.exists():
+        logger.warning(f"Brand font not found at {font_path}; using system fallback")
+        return
+    font_id = QFontDatabase.addApplicationFont(str(font_path))
+    if font_id < 0:
+        logger.warning(f"Failed to register brand font {font_path}")
+        return
+    families = QFontDatabase.applicationFontFamilies(font_id)
+    logger.info(f"Registered brand font families: {families}")
 
 
 THEME_LIGHT = "light"

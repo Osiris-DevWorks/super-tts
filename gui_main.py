@@ -57,6 +57,33 @@ def _bootstrap() -> None:
             pass
 
 
+def _set_windows_app_user_model_id() -> None:
+    """Tell Windows we're a distinct app, not "Python".
+
+    Without this, the Windows taskbar groups the running process under
+    python.exe (or whatever started us) and shows that exe's icon
+    regardless of QIcon assignments. Setting an explicit AppUserModelID
+    *before* QApplication is constructed makes Windows pin the taskbar
+    icon to whatever QApplication.setWindowIcon supplies. No-op on
+    non-Windows platforms.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "OsirisDevWorks.SuperTTS"
+        )
+    except Exception:
+        pass
+
+
+def _resource_path(rel: str) -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / rel
+
+
 def main() -> int:
     _bootstrap()
 
@@ -66,8 +93,13 @@ def main() -> int:
     )
     logger = logging.getLogger("super-tts.gui")
 
+    # Must run BEFORE QApplication so the taskbar groups under our app
+    # ID rather than python.exe's.
+    _set_windows_app_user_model_id()
+
     # Defer Qt imports until after _bootstrap so the env var is set before
     # any code imports main (which the imports below transitively do).
+    from PyQt6.QtGui import QIcon
     from PyQt6.QtWidgets import QApplication
 
     from gui import settings as gui_settings
@@ -77,6 +109,19 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setOrganizationName(gui_settings.ORG_NAME)
     app.setApplicationName(gui_settings.APP_NAME)
+
+    # App-wide icon — feeds the Windows taskbar, the Alt-Tab switcher, and
+    # MainWindow's own setWindowIcon (the per-window call there is a
+    # belt-and-suspenders fallback). Multi-resolution .ico means Windows
+    # picks the right size for each surface.
+    icon_path = _resource_path("assets/super-tts.ico")
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+
+    # Register the bundled display font BEFORE building any widgets that
+    # reference it. addApplicationFont needs a live QApplication, but the
+    # family must be available when the title label's QFont is constructed.
+    gui_theme.load_application_fonts()
 
     gui_theme.apply_theme(app, gui_settings.get_theme())
 

@@ -1,8 +1,11 @@
-"""Log tab — in-app log viewer with export capability.
+"""Embedded log viewer — the lower half of the Status tab.
 
 Adapted from `smart-citizen/src/gui/log_tab.py`. Bridges the stdlib logging
 system to a Qt widget via a `_LogEmitter` signal so log records arriving
 from worker threads render safely on the main thread.
+
+Originally lived as its own `LogTab`; merged into the Status tab so users
+have a single panel with both the Connect button and the live log feed.
 """
 import logging
 from datetime import datetime
@@ -56,8 +59,8 @@ class _QtLogHandler(logging.Handler):
             self.handleError(record)
 
 
-class LogTab(QWidget):
-    """Tab showing a live stream of application log output."""
+class LogView(QWidget):
+    """Embeddable widget showing a live stream of application log output."""
 
     def __init__(self):
         super().__init__()
@@ -78,7 +81,7 @@ class LogTab(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
         toolbar = QHBoxLayout()
@@ -132,7 +135,7 @@ class LogTab(QWidget):
             "QPlainTextEdit { background: #1e1e1e; color: #cccccc; border: none; }"
         )
         self._view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        layout.addWidget(self._view)
+        layout.addWidget(self._view, 1)
 
         self._status_label = QLabel("0 lines")
         self._status_label.setProperty("role", "secondary")
