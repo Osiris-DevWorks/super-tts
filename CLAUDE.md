@@ -11,7 +11,7 @@ Super TTS is a Discord text-to-speech bot built on `discord.py` + `supertonic` (
 
 Both tracks import `main.py`; the desktop track sets `SUPER_TTS_GUI_MODE=1` before import to disable the import-time token-missing exit. See **Windows GUI / installer track** below.
 
-Auxiliary docs that are still authoritative: `DATABASE.md` (schema), `RAILWAY.md` / `RAILWAY_ENV_VARS.md` (server deploy), `DOCKER.md` (local), `DISCORD_SETUP.md` (bot perms). Don't duplicate them — extend them.
+Auxiliary docs that are still authoritative: `DATABASE.md` (schema), `RAILWAY.md` / `RAILWAY_ENV_VARS.md` / `RAILWAY_SETUP.md` (server deploy — `RAILWAY.md` and `RAILWAY_SETUP.md` overlap; treat `RAILWAY.md` as canonical and fold corrections into it), `DOCKER.md` (local), `DISCORD_SETUP.md` (bot perms), `DIAGNOSTIC_REPORT.md` (one-off historical audit, not a live reference). Don't duplicate them — extend them.
 
 ## Commands
 
@@ -24,7 +24,7 @@ poetry run python main.py DEBUG         # run with debug logging — log level i
 
 poetry run pytest tests/ -v             # full test suite
 poetry run pytest tests/test_db.py -v   # single file
-poetry run pytest tests/test_db.py::TestDB::test_connect -v   # single test
+poetry run pytest tests/test_db.py::TestDBConnect -v   # single class (real selector — class names are TestDBHealthCheck / TestDBConnect / TestDBClose / TestDBEnsureConnected)
 
 poetry run black .                      # format (line-length 100, target py3.11)
 poetry run flake8                       # lint
@@ -45,7 +45,7 @@ scripts\build\build_all.bat                             # full pipeline: PyInsta
 
 `VERSION.TXT` is the single source of truth for the version number — `build_exe.py`, `installer.iss`, and the PyInstaller spec all read from it.
 
-`pytest.ini_options` in `pyproject.toml` sets `asyncio_mode = "auto"` — async tests don't need `@pytest.mark.asyncio`.
+`pytest.ini_options` in `pyproject.toml` sets `asyncio_mode = "auto"` — async tests don't need `@pytest.mark.asyncio`. `tests/conftest.py` provides shared fixtures (`mock_db`, `mock_interaction`, `mock_bot`, `mock_config_dict`, `mock_supertonic_engine` — the last one patches `tts.supertonic_engine.TTS` so the ONNX model isn't downloaded during tests).
 
 ## Architecture
 
@@ -57,7 +57,7 @@ scripts\build\build_all.bat                             # full pipeline: PyInsta
 4. **`main()` builds a fresh `commands.Bot` per call** via `_build_bot()` — the bot is intentionally NOT a module-level singleton. discord.py's `Bot.start()` consumes the instance, so a module-level bot would make the GUI's Disconnect → Connect cycle one-shot per process. Treat `bot` as request-scoped, not global.
 5. In `main()`: `execute_sql_files("db/migrations", db)` runs migrations, then `db.connect()` opens the asyncpg pool.
 6. `bot.load_extension("tts_module.tts")` loads the cog, then **the DB instance is monkey-patched onto the cog** (`tts_cog.db = db`) — the cog cannot be constructed with the DB since `commands.Bot.add_cog` wraps construction. The cog defers DB-model instantiation via `TTS._ensure_db_models()`, which is called lazily at the top of every command and listener.
-7. GUI bridge: `main.get_current_bot()` / `main.set_ready_observer(callback)` are the supported handles for the GUI thread. `on_ready` invokes the observer at its tail. Do not `add_listener` against `main.bot` — there is no such module attribute.
+7. GUI bridge: `main.get_current_bot()` / `main.set_ready_observer(callback)` are the supported handles for the GUI thread. The observer is invoked **twice** per connect — first at the tail of `on_connect` (gateway IDENTIFY, so the Status tab flips green at the earliest possible point but `bot.user`/`bot.guilds` may not be populated yet), then again at the tail of `on_ready` once READY has arrived. The GUI's observer is expected to read those attributes defensively. Do not `add_listener` against `main.bot` — there is no such module attribute.
 
 The lazy DB-model pattern and the per-call bot construction are load-bearing. Don't move model construction into `__init__`, and don't promote `bot` back to module scope.
 
@@ -93,7 +93,9 @@ Schema name is `super_tts`. Migrations in `db/migrations/` run in this order on 
 
 The runner has **no migration tracking** — every file must be idempotent (`CREATE TABLE IF NOT EXISTS`, `ALTER ... IF NOT EXISTS`, `ON CONFLICT DO NOTHING`). When adding a migration, follow the `create_NN_*.sql` / `migrate_NN_*.sql` numbering and assume it will run again on the next deploy.
 
-`MANUAL_FIX_voice_claims.sql` is a manual repair script — it does not get auto-run (no `create_`/`migrate_` prefix) and exists for one-off DB surgery.
+**Only `create_*` and `migrate_*` files run** (see `db/init_db.py:execute_sql_files`, line 21). Anything else in `db/migrations/` is dormant. Two existing files trip people up:
+- `fix_05_voice_claims_partial_unique.sql` — defines the partial unique index referenced elsewhere in this doc, but the `fix_` prefix means it **does not auto-run**. If you rely on that index existing, either rename the file to `migrate_NN_…` (after verifying idempotency) or apply it by hand.
+- `MANUAL_FIX_voice_claims.sql` — explicit one-off DB surgery, never runs automatically.
 
 Four model classes wrap the schema (all in `tts_module/db_models.py`): `TTSMonitoredChannels`, `TTSUserPreferences`, `TTSUserSubscriptions`, `TTSVoiceClaims`. The voice-claim system is the non-trivial part — it ties claims to subscriptions via FK with `ON DELETE CASCADE`, and the cog's `cleanup_expired_subscriptions` background task (hourly) is what releases voices when subs lapse.
 
@@ -105,6 +107,12 @@ These rules live in code, not the schema, and are duplicated across `claim_voice
 - One claim per user (enforced by partial unique index — see `fix_05_voice_claims_partial_unique.sql`).
 - A user with a claim can still `voice_set` to a different voice; their preference wins over their claim. See the on_message handler comment "respect user preference change even with claimed voice" (commit `55bda3f`).
 - A claimed voice rejects synthesis from non-owners with an ephemeral reply, message dropped (no fallback voice).
+
+### Voice-name casing is canonicalized
+
+Voice rows in `super_tts.user_preferences.voice_name` and `super_tts.voice_claims.voice_id` must store the casing exactly as it appears in `SupertonicEngine.AVAILABLE_VOICES` (`M1`–`M5`, `F1`–`F5`, `Tichro`, …). Early rows were written before normalization existed and carried values like `'tichro'` or `'m3'`, which broke direct dict lookups and made messages fall back to `M3`. Two pieces keep this consistent:
+- `migrate_02_canonicalize_voice_name_case.sql` rewrites legacy lowercased rows to the canonical casing. It is idempotent — when you add a new claimable voice, extend the `(lower_name, canonical_name)` VALUES list in this migration so future legacy rows get healed.
+- The runtime read path in `tts/supertonic_engine.py` resolves voice keys case-insensitively as a belt-and-braces safety net. Don't remove it just because the migration ran.
 
 ### Duplicate package: `utils/` vs `tts_module/`
 
@@ -162,7 +170,7 @@ When adding a new top-level Python module that the bot imports dynamically, also
 1. **Environment variables** — `DISCORD_TOKEN`, `DATABASE_URL`, `OWNER_ID`, `LOG_LEVEL`, `TTS_DEVICE`, `HF_TOKEN`. Loaded from `.env` via `python-dotenv` at module import. **Resolution**: `%APPDATA%\Osiris DevWorks\Super TTS\.env` if present (installer path), else `load_dotenv()` CWD search (dev/Docker/Railway).
 2. **`SUPER_TTS_GUI_MODE`** — set by `gui_main.py` / `BotRunner` to suppress `main.py`'s import-time token-missing exit. Never set this in server deployments.
 3. **`QSettings`** (Windows registry, HKCU) — GUI-only preferences (theme). Never put secrets here.
-4. **`config/config.yaml`** — TTS engine settings (`tts.max_concurrent`, `tts.warmup`, `tts.supertonic.device`, `tts.supertonic.voice`), audio sample rates, queue sizes. Read via `utils.config_loader.ConfigLoader`.
+4. **`config/config.yaml`** — TTS engine settings (`tts.max_concurrent`, `tts.warmup`, `tts.supertonic.device`, `tts.supertonic.voice`), audio sample rates, queue sizes. Read via `utils.config_loader.ConfigLoader`. `tts.supertonic.voice` is the **fallback voice** (used when a user has no preference saved or their saved preference is no longer a known voice), not a global default — it must be a key from `SupertonicEngine.AVAILABLE_VOICES`.
 5. **CLI argv** — `sys.argv[1]` overrides `LOG_LEVEL` if it's a valid level name.
 
 `TTS_MAX_CONCURRENT` env var is documented in `RAILWAY.md` but is **not currently read** — concurrency comes from `config.yaml`. Either wire the env var in `tts_module/tts.py` (`cog_load`) or remove it from the docs.

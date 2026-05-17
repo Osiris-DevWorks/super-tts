@@ -78,8 +78,13 @@ class SupertonicEngine(BaseTTSEngine):
             voices_dir = Path(__file__).parent.parent / 'voices'
             if voices_dir.exists():
                 import shutil
-                # Find Supertonic's voice_styles directory in the cache
-                supertonic_cache = Path.home() / '.cache' / 'supertonic2' / 'voice_styles'
+                # Resolve the cache from the TTS instance instead of hardcoding
+                # 'supertonic2'. The library picks its own cache dir per model
+                # (supertonic-2 → ~/.cache/supertonic2, supertonic-3 →
+                # ~/.cache/supertonic3, …); hardcoding meant custom voices
+                # silently landed in the wrong directory whenever the installed
+                # library defaulted to a newer model than we assumed.
+                supertonic_cache = Path(self.tts.model_dir) / 'voice_styles'
                 supertonic_cache.mkdir(parents=True, exist_ok=True)
 
                 for voice_file in voices_dir.glob('*.json'):
