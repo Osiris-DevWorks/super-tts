@@ -102,6 +102,12 @@ class SupertonicEngine(BaseTTSEngine):
                 except Exception as e:
                     logger.warning(f'Could not pre-cache voice {v}: {e}')
 
+            # Case-insensitive lookup index. Historical user_preferences rows
+            # written before voice_set normalized casing (e.g. 'tichro' instead
+            # of 'Tichro') would otherwise cache-miss and fall back to the
+            # engine default. Map every variant we know to its canonical key.
+            self._voice_name_canonical = {v.lower(): v for v in self.AVAILABLE_VOICES}
+
         except Exception as e:
             logger.error(f'Failed to load Supertonic engine: {e}')
             raise
@@ -148,10 +154,16 @@ class SupertonicEngine(BaseTTSEngine):
         # Use provided voice_name or fall back to instance voice
         selected_voice = voice_name or self.voice_name
 
-        # Validate voice
-        if selected_voice not in self.AVAILABLE_VOICES:
+        # Normalize to the canonical AVAILABLE_VOICES key — case-insensitively,
+        # so DB rows that pre-date voice_set's normalization (e.g. 'tichro')
+        # still resolve to the right pre-cached style instead of falling
+        # through to the engine default.
+        canonical = self._voice_name_canonical.get(selected_voice.lower()) if selected_voice else None
+        if canonical is None:
             logger.warning(f'Invalid voice {selected_voice}, using default {self.voice_name}')
             selected_voice = self.voice_name
+        else:
+            selected_voice = canonical
 
         # Run in thread pool to avoid blocking
         loop = asyncio.get_event_loop()
