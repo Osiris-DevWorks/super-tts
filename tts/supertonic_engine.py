@@ -51,6 +51,21 @@ class SupertonicEngine(BaseTTSEngine):
             )
 
         self._device = device
+
+        # Validate the requested default voice against AVAILABLE_VOICES,
+        # case-insensitively. Protects against historical config values like
+        # 'custom' that don't correspond to a shipped voice style — without
+        # this, the get_voice_style call below would raise FileNotFoundError
+        # and the bot would refuse to start.
+        canonical = next((v for v in self.AVAILABLE_VOICES if v.lower() == voice.lower()), None)
+        if canonical is None:
+            logger.warning(
+                f'Configured default voice {voice!r} not in AVAILABLE_VOICES; '
+                f'falling back to M3'
+            )
+            voice = 'M3'
+        else:
+            voice = canonical
         self.voice_name = voice
 
         logger.info(f'[Supertonic] Initializing with voice: {voice}')

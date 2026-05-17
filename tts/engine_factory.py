@@ -47,17 +47,13 @@ class TTSEngineFactory:
             # the bundled config file.
             device = os.getenv('TTS_DEVICE') or config.get('device', 'auto')
 
-            # Get model-specific config if it exists (ensure it's always a dict)
-            model_config = config.get('model_config', {})
-            if model_config is None:
-                model_config = {}
+            # Pass everything else from config.yaml's tts.supertonic block
+            # straight through as engine kwargs (voice, etc). Explicit kwargs
+            # passed to create() still win on the right of the merge.
+            engine_kwargs = {k: v for k, v in config.items() if k != 'device'}
+            engine_kwargs.update(kwargs)
 
-            # Create engine instance with configuration
-            engine = SupertonicEngine(
-                device=device,
-                **model_config,
-                **kwargs
-            )
+            engine = SupertonicEngine(device=device, **engine_kwargs)
 
             logger.info(f"Successfully created Supertonic engine on device: {engine.device}")
             return engine

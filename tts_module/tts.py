@@ -86,16 +86,15 @@ class TTS(commands.Cog):
             # Load config
             self.config = ConfigLoader(_resource_path('config/config.yaml'))
 
-            # Get model name from config (default to xtts_v2 for backward compatibility)
-            model_name = self.config.get('tts.model', 'xtts_v2')
-
-            # Get engine-specific configuration
-            engines_config = self.config.get('tts.engines', {})
-            engine_config = engines_config.get(model_name, {})
+            # Engine-specific settings live at tts.supertonic.* in config.yaml.
+            # Earlier code read tts.engines.<model>.* (a layout that never
+            # existed in this repo) and silently got back {}, which meant
+            # the configured device + default voice were never reaching
+            # the engine.
+            engine_config = self.config.get('tts.supertonic', {}) or {}
 
             # Create TTS engine using factory pattern
             self.tts_engine = TTSEngineFactory.create(
-                model_name=model_name,
                 config=engine_config
             )
 
