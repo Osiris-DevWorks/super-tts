@@ -26,7 +26,9 @@ tts:
   # Device options: "auto" (detect CUDA/ROCm/CPU), "cuda" (NVIDIA GPU), "rocm" (AMD GPU), "cpu"
   supertonic:
     device: "auto"  # auto-detects NVIDIA CUDA, AMD ROCm, or falls back to CPU
-    voice: "custom"  # Default voice for Supertonic (set to your custom voice)
+    voice: "M3"     # Fallback voice used when a user has no preference saved
+                    # or the saved preference is no longer a known voice.
+                    # Must be a key from SupertonicEngine.AVAILABLE_VOICES.
 
 # Audio settings
 audio:
