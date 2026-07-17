@@ -69,9 +69,12 @@ Discord message  →  on_message listener (tts_module/tts.py)
                  →  per-guild asyncio.Queue, drained by a processor task
                  →  AudioPipeline.synthesize_and_convert (tts/audio_pipeline.py)
                        ├─ SupertonicEngine.synthesize (ONNX, in thread executor)
-                       └─ ffmpeg subprocess: 24kHz mono → 48kHz stereo PCM
+                       └─ scipy.signal.resample_poly (np.interp fallback):
+                            ~45kHz mono → 48kHz stereo PCM, in thread executor
                  →  PCMAudioSource fed to guild.voice_client.play()
 ```
+
+Input sample rate is read from `tts_engine.sample_rate` (45000 for Supertonic), not hardcoded — don't reintroduce a 24 kHz constant. There is no ffmpeg subprocess in this path; ffmpeg only enters via discord.py's Opus encoding downstream of `voice_client.play()`.
 
 Concurrency cap: `tts.max_concurrent` in `config/config.yaml` (default 20) is enforced by `QueueManager` via `asyncio.Semaphore`.
 
@@ -81,7 +84,7 @@ Concurrency cap: `tts.max_concurrent` in `config/config.yaml` (default 20) is en
 
 `SupertonicEngine` does two things on init that surprise people:
 - Calls `TTS(auto_download=True)` which downloads the ONNX model from HuggingFace on first run (set `HF_TOKEN` to avoid rate limits).
-- Copies every `voices/*.json` into `~/.cache/supertonic2/voice_styles/`, matching filenames against `AVAILABLE_VOICES` keys case-insensitively. New custom voices ship as `voices/<Name>.json` with the `<Name>` also added to `AVAILABLE_VOICES`.
+- Copies every `voices/*.json` into `Path(self.tts.model_dir) / 'voice_styles'`, matching filenames against `AVAILABLE_VOICES` keys case-insensitively. The cache directory is **resolved from the TTS instance, not hardcoded** — `supertonic-2` lands in `~/.cache/supertonic2`, `supertonic-3` in `~/.cache/supertonic3`, etc. Hardcoding `supertonic2` is what caused Tichro to silently land in the wrong directory when the installed library defaulted to a newer model (commit `060d169`). New custom voices ship as `voices/<Name>.json` with the `<Name>` also added to `AVAILABLE_VOICES`.
 
 All voice styles are pre-cached at startup (`_voice_style_cache`) — synthesis is keyed lookup, not disk I/O.
 
@@ -110,9 +113,10 @@ These rules live in code, not the schema, and are duplicated across `claim_voice
 
 ### Voice-name casing is canonicalized
 
-Voice rows in `super_tts.user_preferences.voice_name` and `super_tts.voice_claims.voice_id` must store the casing exactly as it appears in `SupertonicEngine.AVAILABLE_VOICES` (`M1`–`M5`, `F1`–`F5`, `Tichro`, …). Early rows were written before normalization existed and carried values like `'tichro'` or `'m3'`, which broke direct dict lookups and made messages fall back to `M3`. Two pieces keep this consistent:
+Voice rows in `super_tts.user_preferences.voice_name` and `super_tts.voice_claims.voice_id` must store the casing exactly as it appears in `SupertonicEngine.AVAILABLE_VOICES` (`M1`–`M5`, `F1`–`F5`, `Tichro`, …). Early rows were written before normalization existed and carried values like `'tichro'` or `'m3'`, which broke direct dict lookups and made messages fall back to `M3`. Three pieces keep this consistent — all three are belt-and-braces; don't remove any of them just because the others exist:
 - `migrate_02_canonicalize_voice_name_case.sql` rewrites legacy lowercased rows to the canonical casing. It is idempotent — when you add a new claimable voice, extend the `(lower_name, canonical_name)` VALUES list in this migration so future legacy rows get healed.
-- The runtime read path in `tts/supertonic_engine.py` resolves voice keys case-insensitively as a belt-and-braces safety net. Don't remove it just because the migration ran.
+- `SupertonicEngine.__init__` validates the configured fallback voice (`tts.supertonic.voice` from `config.yaml`) against `AVAILABLE_VOICES` case-insensitively and falls back to `M3` with a warning if it doesn't match (`tts/supertonic_engine.py:56-69`). Without this, a stale `voice: "custom"` in the YAML would crash `get_voice_style` and refuse to start the bot.
+- The runtime synthesize path resolves voice keys case-insensitively via `_voice_name_canonical`, so any DB row that slipped past the migration still hits the right pre-cached style.
 
 ### Duplicate package: `utils/` vs `tts_module/`
 
@@ -170,7 +174,7 @@ When adding a new top-level Python module that the bot imports dynamically, also
 1. **Environment variables** — `DISCORD_TOKEN`, `DATABASE_URL`, `OWNER_ID`, `LOG_LEVEL`, `TTS_DEVICE`, `HF_TOKEN`. Loaded from `.env` via `python-dotenv` at module import. **Resolution**: `%APPDATA%\Osiris DevWorks\Super TTS\.env` if present (installer path), else `load_dotenv()` CWD search (dev/Docker/Railway).
 2. **`SUPER_TTS_GUI_MODE`** — set by `gui_main.py` / `BotRunner` to suppress `main.py`'s import-time token-missing exit. Never set this in server deployments.
 3. **`QSettings`** (Windows registry, HKCU) — GUI-only preferences (theme). Never put secrets here.
-4. **`config/config.yaml`** — TTS engine settings (`tts.max_concurrent`, `tts.warmup`, `tts.supertonic.device`, `tts.supertonic.voice`), audio sample rates, queue sizes. Read via `utils.config_loader.ConfigLoader`. `tts.supertonic.voice` is the **fallback voice** (used when a user has no preference saved or their saved preference is no longer a known voice), not a global default — it must be a key from `SupertonicEngine.AVAILABLE_VOICES`.
+4. **`config/config.yaml`** — TTS engine settings (`tts.max_concurrent`, `tts.warmup`, `tts.supertonic.device`, `tts.supertonic.voice`), audio sample rates, queue sizes. Read via `utils.config_loader.ConfigLoader`. `tts.supertonic.voice` is the **fallback voice** (used when a user has no preference saved or their saved preference is no longer a known voice), not a global default — it must be a key from `SupertonicEngine.AVAILABLE_VOICES`. Several blocks in this file are **vestigial and not read by current code**: the `custom` entry under `voices:`, the `languages:` map, `defaults.voice_name`, and the entire `database:` block (the bot uses PostgreSQL via `DATABASE_URL`, not SQLite). Don't reference them when wiring new behavior; either remove them or wire them up — don't leave new code reading them.
 5. **CLI argv** — `sys.argv[1]` overrides `LOG_LEVEL` if it's a valid level name.
 
 `TTS_MAX_CONCURRENT` env var is documented in `RAILWAY.md` but is **not currently read** — concurrency comes from `config.yaml`. Either wire the env var in `tts_module/tts.py` (`cog_load`) or remove it from the docs.
@@ -180,6 +184,10 @@ When adding a new top-level Python module that the bot imports dynamically, also
 - Push to `main` triggers `.github/workflows/deploy.yml` → `railway up --detach` (needs `RAILWAY_TOKEN` secret).
 - Railway auto-injects `DATABASE_URL` from the linked Postgres plugin; do not set it manually. The DB layer warns if `DATABASE_URL` contains `localhost`.
 - `railway.json` points at the `Dockerfile`; the Dockerfile is multi-stage (poetry install in builder, copy site-packages to slim runtime, run as non-root `ttsbot` UID 1000).
+
+## Releases
+
+On every release (server or desktop track), also update the Super-TTS entry in `../osiris-devworks-website/src/data/projects.ts` (sibling workspace repo): bump the static `version` fallback and refresh `features`/`status` for what shipped. The site auto-fetches the live version from this repo's `VERSION.TXT` on `main`, but everything else on the tile is manual. Pushing the website repo's `main` deploys it.
 
 ## When adding features
 
