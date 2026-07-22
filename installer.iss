@@ -21,7 +21,7 @@
 AppId={{F7A4D9C1-3B6E-4A2D-9C5F-8E1B7D0A2F4C}
 AppName=Super TTS
 AppVersion={#AppVer}
-AppPublisher=Osiris DevWorks
+AppPublisher=Osiris DevWorks, LLC
 DefaultDirName={localappdata}\Osiris DevWorks\Super TTS
 DefaultGroupName=Super TTS
 OutputDir=dist
