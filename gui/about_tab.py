@@ -51,7 +51,7 @@ class AboutTab(QWidget):
         self._version_label.setProperty("role", "secondary")
         layout.addWidget(self._version_label)
 
-        self._publisher_label = QLabel("Osiris DevWorks")
+        self._publisher_label = QLabel("Osiris DevWorks, LLC")
         self._publisher_label.setProperty("role", "secondary")
         layout.addWidget(self._publisher_label)
 
