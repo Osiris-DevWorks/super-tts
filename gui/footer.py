@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # projects; the GitHub URL is per-project.
 _GITHUB_URL = "https://github.com/Osiris-DevWorks/super-tts"
 _DISCORD_URL = "https://discord.gg/BNzRegKZ7k"
-_PAYPAL_URL = "https://paypal.me/RighteousKill"
+_PAYPAL_URL = "https://www.paypal.com/ncp/payment/YAWXHMGZH8T76"
 _VENMO_URL = "https://venmo.com/u/Amr-Abouelleil"
 
 _LOGO_HEIGHT_PX = 40
