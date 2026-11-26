@@ -1,9 +1,12 @@
 name: Tests
 
 on:
+  # The release PR, hotfix PRs into main, and contributor PRs into a release branch. Feature
+  # work is pushed straight to release/X.Y.Z and runs nothing.
   pull_request:
     branches:
       - main
+      - "release/**"
 
 jobs:
   test:
