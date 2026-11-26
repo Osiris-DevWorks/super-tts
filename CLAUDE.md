@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Osiris DevWorks development pipeline (universal)
+
+This section is identical in every Osiris DevWorks repo's CLAUDE.md. Change it in all of them at once. The line just below it says how this repo applies it. Where an older section of this file conflicts with it, this section wins.
+
+The goal is little friction and few GitHub Actions runs: checks and code review run once per release, not once per feature.
+
+1. **Grill the idea.** When Amr brings a new idea, ask questions until it is ready to build. Ask every question as a multiple-choice decision card (`request_decision`, or `AskUserQuestion` in the CLI) with a recommended option, never as questions in prose. A few cards at a time is fine.
+2. **Mock up any UI.** When a feature adds or changes UI, show an HTML Artifact mockup during grilling. Build it from the app's real colors, fonts, spacing and layout, read from the source, and show the current screen next to the changed one. Grilling isn't done until Amr approves the mockup.
+3. **Grilling sign-off is the approval.** Once Amr says the idea is ready, build it without further check-ins: no step-by-step plan approvals, no code-block reviews, and no commit-message review. Ask again only if the work hits a choice that grilling did not settle.
+4. **Push straight to the integration branch, with no feature PR.** Run the repo's tests, lint and type check in your own session. Update this repo's test plan, if it has one, with concrete pass/fail items for the feature. Then push **one squashed commit per feature** to the integration branch, with a message like `#123: short summary` (`Fixes #123` in the body when it closes the issue). A feature branch is fine while you work; only the squashed result lands. Never force-push the integration branch.
+5. **Release: one PR, all checks, one review.** When Amr calls a release, open one PR from the integration branch to production. Every pre-release check and the code review run on that PR, once. Fix what they find with more commits on the integration branch. Amr runs the test plan (on preview builds or staging) and merges, or tells you to merge.
+6. **Hotfixes.** For an urgent production fix, branch off production, open a PR straight to production (full checks and review run on it), and once it merges, merge production back into the integration branch.
+7. **Outside PRs.** Contributor and Dependabot PRs get CI only, with no Claude review bot. Dependabot is grouped and runs monthly.
+8. **Workflow triggers.** Keep workflows off feature work: no `push` triggers on integration branches except where a deploy needs one, and the Claude review workflow runs only on PRs into production. Don't add a workflow that runs on every push without Amr's OK.
+
+**How this repo applies it: server bot plus desktop installer.** The integration branch is the active `release/X.Y.Z` (opened off `main` by `/start_release`, named for the version it will ship) and production is `main`, whose every push deploys the server track to Railway. The test plan is `TEST_PLAN.md`: each feature push adds its own `### #issue: short name` section of pass/fail items. There is no staging bot, so Amr runs the test plan from the release branch (`poetry run python gui_main.py`, or an installer built with `scripts\build\build_all.bat`) before the release PR merges. `test.yml` and a `/code-review` pass run on that PR during `/release`.
+
 ## Project
 
 Super TTS is a Discord text-to-speech bot built on `discord.py` + `supertonic` (ONNX Runtime) + PostgreSQL. It ships on **two tracks** from one codebase:
@@ -181,13 +198,16 @@ When adding a new top-level Python module that the bot imports dynamically, also
 
 ## Deploy
 
-- Push to `main` triggers `.github/workflows/deploy.yml` → `railway up --detach` (needs `RAILWAY_TOKEN` secret).
+- Push to `main` triggers `.github/workflows/deploy.yml` → `railway up --detach` (needs `RAILWAY_TOKEN` secret). Only the release PR's merge and hotfix PRs reach `main`, so that is the only deploy; nothing runs on a push to `release/X.Y.Z`.
+- `test.yml` runs on PRs into `main` and `release/**` (the release PR, hotfixes, contributor PRs).
 - Railway auto-injects `DATABASE_URL` from the linked Postgres plugin; do not set it manually. The DB layer warns if `DATABASE_URL` contains `localhost`.
 - `railway.json` points at the `Dockerfile`; the Dockerfile is multi-stage (poetry install in builder, copy site-packages to slim runtime, run as non-root `ttsbot` UID 1000).
 
 ## Releases
 
-On every release (server or desktop track), also update the Super-TTS entry in `../osiris-devworks-website/src/data/projects.ts` (sibling workspace repo): bump the static `version` fallback and refresh `features`/`status` for what shipped. The site auto-fetches the live version from this repo's `VERSION.TXT` on `main`, but everything else on the tile is manual. Pushing the website repo's `main` deploys it.
+Releases follow `/start_release` (open the next `release/X.Y.Z`) and `/release` (bump `VERSION.TXT` on it, open the release PR, merge on Amr's OK). Hotfixes branch off `main`, PR into `main`, then `main` is merged back into the release branch.
+
+On every release (server or desktop track), also update the Super-TTS entry in `../osiris-devworks-website/src/data/projects.ts` (sibling workspace repo): bump the static `version` fallback and refresh `features`/`status` for what shipped. The site auto-fetches the live version from this repo's `VERSION.TXT` on `main`, but everything else on the tile is manual. That repo's own pipeline publishes it.
 
 ## When adding features
 
